@@ -6,8 +6,6 @@ from datetime import datetime
 import django
 import os
 import sys
-import socks
-
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'proxy_checker.settings')
@@ -15,6 +13,7 @@ django.setup()
 
 from checker.models import CheckedProxy
 from proxy_information import ProxyInformation
+
 
 class ProxyValidator:
     def __init__(self, proxies_list, checked_socks, start_time, header, txt_sources, checked_count):
@@ -87,7 +86,8 @@ class ProxyValidator:
         hours = int(elapsed_time // 3600)
         minutes = int((elapsed_time % 3600) // 60)
         seconds = int(elapsed_time % 60)
-        print(f'Total checked {start} out of {len(set(self.proxies_list))}, elapsed {hours} hours {minutes} minutes {seconds} seconds')
+        print(
+            f'Total checked {start} out of {len(set(self.proxies_list))}, elapsed {hours} hours {minutes} minutes {seconds} seconds')
 
     def check_proxy_with_proxyinformation(self, proxy):
         checker = ProxyInformation()
@@ -130,9 +130,9 @@ class ProxyValidator:
             self.timer(self.checked_count)
 
     def run(self):
-        self.get_data_from_geonode()
-        self.get_data_from_socksus()
-        self.get_data_from_txt()
+        # self.get_data_from_geonode()
+        # self.get_data_from_socksus()
+        # self.get_data_from_txt()
         print(f'Found {len(set(self.proxies_list))} proxies')
 
         self.check_proxy('https://cloudflare.com')
@@ -146,21 +146,21 @@ class ProxyValidator:
 
 
 if __name__ == "__main__":
-    proxies_list = []
+    proxies_list = ["38.55.195.177:48006", "138.68.81.7:13983", "68.178.174.208:34236", "51.75.126.150:19578"]
     checked_socks = []
     start_time = time.time()
     header = {'User-Agent': UserAgent().random}
     checked_count = 0
     txt_sources = [
-        # "https://spys.me/socks.txt",
-        # "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
-        # "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt",
-        # "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt",
-        # "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/socks5/socks5.txt",
-        # "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Socks5.txt",
-        # "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt",
-        # "https://raw.githubusercontent.com/yemixzy/proxy-list/main/proxies/socks5.txt",
-        # "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
+        "https://spys.me/socks.txt",
+        "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
+        "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt",
+        "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt",
+        "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/socks5/socks5.txt",
+        "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Socks5.txt",
+        "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt",
+        "https://raw.githubusercontent.com/yemixzy/proxy-list/main/proxies/socks5.txt",
+        "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
     ]
 
     # Create and run ProxyValidator instance
