@@ -7,41 +7,36 @@
     {% load static %}
     <link rel="stylesheet" href="{% static 'checker/styles.css' %}">
     <script>
-        // Fetch data from API and trigger proxy check
-        function checkProxies(singleCheck = true) {
-            fetch('/api/data/', {
-                method: 'GET', // Or POST if necessary
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    alert(data.message);  // Display success message
-                    // Optionally, update the table without reloading
-                    fetchProxies();  // Fetch updated proxy data
-                } else {
-                    alert('Ошибка при проверке прокси');
-                }
-            })
-            .catch(error => {
-                alert('Ошибка: ' + error);
-            });
+        let intervalId;
+
+        function startProxyCheck() {
+            fetch('/start/')
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    updateTimer();
+                    startStatusUpdates();
+                });
         }
 
-        // Fetch updated proxy data (after proxy check)
-        function fetchProxies() {
-            fetch('/api/proxies/')  // Make sure to create this API endpoint
+        function stopProxyCheck() {
+            fetch('/stop/')
                 .then(response => response.json())
-                .then(proxies => {
-                    const tbody = document.getElementById('results-body');
-                    tbody.innerHTML = '';  // Clear existing rows
+                .then(data => {
+                    alert(data.message);
+                    clearInterval(intervalId);
+                });
+        }
 
-                    proxies.forEach((proxy, index) => {
+        function fetchProxies() {
+            fetch('/checked_proxies/')
+                .then(response => response.json())
+                .then(data => {
+                    const tableBody = document.getElementById('proxy-table-body');
+                    tableBody.innerHTML = '';
+                    data.forEach(proxy => {
                         const row = document.createElement('tr');
                         row.innerHTML = `
-                            <td>${index + 1}</td>
                             <td>${proxy.ip}</td>
                             <td>${proxy.port}</td>
                             <td>${proxy.protocol}</td>
@@ -49,40 +44,50 @@
                             <td>${proxy.anonymity}</td>
                             <td>${proxy.country}</td>
                             <td>${proxy.country_code}</td>
+                            <td>${proxy.date_checked}</td>
+                            <td>${proxy.time_checked}</td>
                         `;
-                        tbody.appendChild(row);
+                        tableBody.appendChild(row);
                     });
-                })
-                .catch(error => {
-                    alert('Ошибка при загрузке прокси данных: ' + error);
                 });
         }
 
-        // Start continuous proxy check
-        let intervalId;
-        function startContinuousCheck() {
-            intervalId = setInterval(() => {
-                checkProxies(false);
-            }, 60000);  // Check every 60 seconds
+        function startStatusUpdates() {
+            intervalId = setInterval(updateTimer, 10000);  // Обновляем таймер каждую секунду
         }
 
-        // Stop continuous proxy check
-        function stopContinuousCheck() {
-            clearInterval(intervalId);
+        function updateTimer() {
+            fetch('/proxy_status/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'running') {
+                        const elapsed = data.elapsed_time;
+                        const remaining = data.remaining_time;
+                        const checked = data.total_checked;
+
+                        // Преобразуем время в часы, минуты, секунды
+                        const hours = Math.floor(elapsed / 3600);
+                        const minutes = Math.floor((elapsed % 3600) / 60);
+                        const seconds = Math.floor(elapsed % 60);
+
+                        const remainingHours = Math.floor(remaining / 3600);
+                        const remainingMinutes = Math.floor((remaining % 3600) / 60);
+                        const remainingSeconds = Math.floor(remaining % 60);
+
+                        // Обновляем текст таймера
+                        document.getElementById('timer').innerHTML = `
+                            Всего проверено ${checked} прокси, прошло ${hours} часов ${minutes} минут ${seconds} секунд.
+                            До окончания проверки осталось приблизительно ${remainingHours} часов ${remainingMinutes} минут ${remainingSeconds} секунд.
+                        `;
+                    }
+                });
         }
 
-        // Change page functionality (for pagination)
-        let currentPage = 1;
-        const pageSize = 10;
-
-        function changePage(increment) {
-            const newPage = currentPage + increment;
-            const maxPage = Math.ceil(proxies.length / pageSize);
-            if (newPage > 0 && newPage <= maxPage) {
-                currentPage = newPage;
-                renderTable(currentPage);
-            }
+        function downloadProxyList() {
+            window.location.href = '/generate_proxy_list/';
         }
+
+        setInterval(fetchProxies, 60000); // Обновляем таблицу каждый 1 минуту
     </script>
 </head>
 <body>
@@ -98,48 +103,45 @@
 
     <div class="container">
         <h2>Проверка Прокси</h2>
-        <button onclick="checkProxies(true)">Начать проверку</button>
-        <button onclick="stopContinuousCheck()">Остановить проверку</button>
+        <button onclick="startProxyCheck()">Проверка прокси</button>
+        <button onclick="stopProxyCheck()">Остановить проверку</button>
+        <button onclick="downloadProxyList()">Ссылка на список проверенных прокси</button>
 
         <h3>Проверенные Прокси</h3>
-        <table>
+        <table border="1">
             <thead>
                 <tr>
-                    <th>№</th>
-                    <th>IP Адрес</th>
-                    <th>Порт</th>
-                    <th>Протокол</th>
-                    <th>Время ответа</th>
-                    <th>Анонимность</th>
-                    <th>Страна</th>
-                    <th>Код страны</th>
+                    <th>IP</th>
+                    <th>Port</th>
+                    <th>Protocol</th>
+                    <th>Response Time</th>
+                    <th>Anonymity</th>
+                    <th>Country</th>
+                    <th>Country Code</th>
+                    <th>Date Checked</th>
+                    <th>Time Checked</th>
                 </tr>
             </thead>
-            <tbody id="results-body">
-                <!-- Результаты проверки будут добавлены здесь динамически -->
+            <tbody id="proxy-table-body">
                 {% for proxy in proxies %}
-                <tr>
-                    <td>{{ forloop.counter }}</td>
-                    <td>{{ proxy.ip }}</td>
-                    <td>{{ proxy.port }}</td>
-                    <td>{{ proxy.protocol }}</td>
-                    <td>{{ proxy.response_time }}</td>
-                    <td>{{ proxy.anonymity }}</td>
-                    <td>{{ proxy.country }}</td>
-                    <td>{{ proxy.country_code }}</td>
-                </tr>
+                    <tr>
+                        <td>{{ proxy.ip }}</td>
+                        <td>{{ proxy.port }}</td>
+                        <td>{{ proxy.protocol }}</td>
+                        <td>{{ proxy.response_time }}</td>
+                        <td>{{ proxy.anonymity }}</td>
+                        <td>{{ proxy.country }}</td>
+                        <td>{{ proxy.country_code }}</td>
+                        <td>{{ proxy.date_checked }}</td>
+                        <td>{{ proxy.time_checked }}</td>
+                    </tr>
                 {% endfor %}
             </tbody>
         </table>
-
-    </div>
-    <div class="timer">
-        <p>Всего проверено {start} из {total_proxies} прокси, прошло {hours} часов {minutes} минут {seconds} секунд</p>
-        <p>До окончания проверки осталось приблизительно {remaining_hours} часов {remaining_minutes} минут {remaining_seconds} секунд</p>
     </div>
 
-    <div class="txturl">
-        <a href="http://127.0.0.1/api.txt">Ссылка на список проверенных прокси</a>
+    <div class="timer" id="timer">
+        <p>Всего проверено 0 из 0 прокси. Примерное время до окончания проверки: 0 часов 0 минут 0 секунд.</p>
     </div>
 
     <footer>

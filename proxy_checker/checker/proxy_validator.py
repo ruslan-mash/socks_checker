@@ -1,22 +1,17 @@
-# proxy_validator.py
-
 import requests
 import re
 import time
-
-from django.core.serializers import serialize
-from fake_useragent import UserAgent
 from datetime import datetime
-from proxy_information import ProxyInformation
+from fake_useragent import UserAgent
 import os
 import sys
+from proxy_information import ProxyInformation
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'proxy_checker.settings')
 import django
 django.setup()
 
-#from checker.models import CheckedProxy
 from checker.serializers import CheckedProxySerializer
 
 
@@ -28,6 +23,9 @@ class ProxyValidator:
         self.header = header
         self.txt_sources = txt_sources
         self.checked_count = 0
+        self.running = True
+
+
 
     def get_data_from_geonode(self):
         base_url = "https://proxylist.geonode.com/api/proxy-list?protocols=socks5&limit=500"
@@ -86,6 +84,10 @@ class ProxyValidator:
                 proxy_list_filtered = re.findall(pattern, "\n".join(proxy_list))
                 self.proxies_list.extend(proxy_list_filtered)
 
+
+
+
+
     def timer(self, start):
         total_proxies = len(set(self.proxies_list))
         elapsed_time = time.time() - self.start_time
@@ -100,11 +102,12 @@ class ProxyValidator:
         hours = int(elapsed_time // 3600)
         minutes = int((elapsed_time % 3600) // 60)
         seconds = int(elapsed_time % 60)
+        print(
+        f'Всего проверено {start} из {total_proxies} прокси, прошло {hours} часов {minutes} минут {seconds} секунд')
+        print(
+        f'До окончания проверки осталось приблизительно {remaining_hours} часов {remaining_minutes} минут {remaining_seconds} секунд')
 
-        print(
-            f'Всего проверено {start} из {total_proxies} прокси, прошло {hours} часов {minutes} минут {seconds} секунд')
-        print(
-            f'До окончания проверки осталось приблизительно {remaining_hours} часов {remaining_minutes} минут {remaining_seconds} секунд')
+
 
     def check_proxy_with_proxyinformation(self, proxy):
         checker = ProxyInformation()
@@ -134,6 +137,8 @@ class ProxyValidator:
 
     def check_proxy(self, url, timeout=5, max_retries=3):
         for count, proxy in enumerate(set(self.proxies_list), start=1):
+            if not self.running:
+                break
             proxy_dict = {
                 'http': f'socks5://{proxy}',
                 'https': f'socks5://{proxy}'
@@ -154,19 +159,16 @@ class ProxyValidator:
             self.timer(self.checked_count)
 
     def run(self):
-        # self.get_data_from_geonode()
         self.get_data_from_socksus()
+        # self.get_data_from_geonode()
         # self.get_data_from_txt()
         print(f'Found {len(set(self.proxies_list))} proxies')
 
         self.check_proxy('https://cloudflare.com')
         self.timer(self.checked_count)
 
-        # total_elapsed_time = time.time() - self.start_time
-        # total_hours = int(total_elapsed_time // 3600)
-        # total_minutes = int((total_elapsed_time % 3600) // 60)
-        # total_seconds = int(total_elapsed_time % 60)
-        # print(f"--- Total time spent {total_hours} hours {total_minutes} minutes {total_seconds} seconds ---")
+    def stop(self):
+        self.running = False
 
 
 if __name__ == "__main__":
