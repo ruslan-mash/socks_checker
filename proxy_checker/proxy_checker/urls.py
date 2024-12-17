@@ -19,8 +19,12 @@ from django.urls import path
 
 from django.contrib import admin
 from django.urls import path, include
+from rest_framework import routers
+
+router = routers.SimpleRouter()
 
 urlpatterns = [
+    *router.urls,
     path('admin/', admin.site.urls),
-    path('', include('checker.urls')),  # Подключаем urls.py из приложения checker
+    path('api/', include("checker.urls"))
 ]

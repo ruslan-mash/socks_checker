@@ -1,6 +1,9 @@
 from django.urls import path
-from .views import proxy_list
+from . import views
 
 urlpatterns = [
-    path('proxies/', proxy_list, name='proxy_list'),
+    path('check/', views.StartCheckedProxyView(list), name='check_proxy')
+    path('check/stop/', views.StopCheckedProxyView(list), name='stop_check')
+
 ]
+

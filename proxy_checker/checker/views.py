@@ -1,12 +1,23 @@
 from django.shortcuts import render
+from rest_framework import viewsets
+from rest_framework.permissions import AllowAny
+from .models import CheckedProxy
+from .serializers import CheckedProxySerializer
 
-# Create your views here.
+class CheckedProxyView(viewsets.ModelViewSet):
+    queryset = CheckedProxy.objects.all()
+    permission_classes = [AllowAny]
+    serializer_class = CheckedProxySerializer
 
-from django.shortcuts import render
-from .models import CheckedProxy  # Если нужно загрузить данные
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return render(request, 'checker/proxy_list.html', {'proxies': serializer.data})
 
-def proxy_list(request):
-    proxies = CheckedProxy.objects.all()  # Пример, как получить данные
-    return render(request, 'checker/proxy_list.html', {'proxies': proxies})
+class StartCheckedProxyView:
+    pass
+
+class StopCheckedProxyView:
+    pass
 
 

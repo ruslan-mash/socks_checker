@@ -6,64 +6,78 @@
     <title>Socks Checker</title>
     {% load static %}
     <link rel="stylesheet" href="{% static 'checker/styles.css' %}">
-
     <script>
-        let intervalId;
-        let currentPage = 1;
-        const pageSize = 10;
-        let results = [];
-
-        function renderTable(page = 1) {
-            const tableBody = document.getElementById('results-body');
-            tableBody.innerHTML = ''; // Очистить существующие результаты
-
-            const start = (page - 1) * pageSize;
-            const end = start + pageSize;
-            const pageResults = results.slice(start, end);
-
-            pageResults.forEach((result, index) => {
-                const row = document.createElement('tr');
-                const numberCell = document.createElement('td');
-                numberCell.textContent = start + index + 1;
-                row.appendChild(numberCell);
-
-                for (const key in result) {
-                    const cell = document.createElement('td');
-                    cell.textContent = result[key];
-                    row.appendChild(cell);
+        // Fetch data from API and trigger proxy check
+        function checkProxies(singleCheck = true) {
+            fetch('/api/data/', {
+                method: 'GET', // Or POST if necessary
+                headers: {
+                    'Content-Type': 'application/json'
                 }
-                tableBody.appendChild(row);
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert(data.message);  // Display success message
+                    // Optionally, update the table without reloading
+                    fetchProxies();  // Fetch updated proxy data
+                } else {
+                    alert('Ошибка при проверке прокси');
+                }
+            })
+            .catch(error => {
+                alert('Ошибка: ' + error);
             });
-
-            document.getElementById('current-page').textContent = page;
         }
 
-        async function checkProxies(singleCheck = true) {
-            // Имитация вызова функции проверки прокси (замените это реальной логикой)
-            results = [
-                {ip: '192.168.0.1', port: '8080', protocol: 'socks5', responseTime: '100ms', anonymity: 'high', country: 'США', country_code: 'US'},
-                {ip: '192.168.0.2', port: '8080', protocol: 'socks5', responseTime: '150ms', anonymity: 'high', country: 'Канада', country_code: 'CA'},
-                // Добавьте больше объектов для имитации
-            ];
+        // Fetch updated proxy data (after proxy check)
+        function fetchProxies() {
+            fetch('/api/proxies/')  // Make sure to create this API endpoint
+                .then(response => response.json())
+                .then(proxies => {
+                    const tbody = document.getElementById('results-body');
+                    tbody.innerHTML = '';  // Clear existing rows
 
-            renderTable(currentPage);
-
-            if (!singleCheck) {
-                intervalId = setInterval(checkProxies, 60000, false); // Проверять каждые 60 секунд
-            }
+                    proxies.forEach((proxy, index) => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td>${proxy.ip}</td>
+                            <td>${proxy.port}</td>
+                            <td>${proxy.protocol}</td>
+                            <td>${proxy.response_time}</td>
+                            <td>${proxy.anonymity}</td>
+                            <td>${proxy.country}</td>
+                            <td>${proxy.country_code}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                })
+                .catch(error => {
+                    alert('Ошибка при загрузке прокси данных: ' + error);
+                });
         }
 
+        // Start continuous proxy check
+        let intervalId;
         function startContinuousCheck() {
-            checkProxies(false);
+            intervalId = setInterval(() => {
+                checkProxies(false);
+            }, 60000);  // Check every 60 seconds
         }
 
+        // Stop continuous proxy check
         function stopContinuousCheck() {
             clearInterval(intervalId);
         }
 
+        // Change page functionality (for pagination)
+        let currentPage = 1;
+        const pageSize = 10;
+
         function changePage(increment) {
             const newPage = currentPage + increment;
-            const maxPage = Math.ceil(results.length / pageSize);
+            const maxPage = Math.ceil(proxies.length / pageSize);
             if (newPage > 0 && newPage <= maxPage) {
                 currentPage = newPage;
                 renderTable(currentPage);
@@ -77,16 +91,15 @@
     </header>
 
     <nav>
-        <a href="#home">Старт</a>
+        <a href="#home">Проверка</a>
         <a href="#about">Описание</a>
         <a href="#faq">FAQ</a>
     </nav>
 
     <div class="container">
         <h2>Проверка Прокси</h2>
-        <button onclick="checkProxies(true)">Однократная проверка</button>
-        <button onclick="startContinuousCheck()">Постоянная проверка</button>
-        <button onclick="stopContinuousCheck()">Остановить постоянную проверку</button>
+        <button onclick="checkProxies(true)">Начать проверку</button>
+        <button onclick="stopContinuousCheck()">Остановить проверку</button>
 
         <h3>Проверенные Прокси</h3>
         <table>
@@ -118,14 +131,15 @@
                 {% endfor %}
             </tbody>
         </table>
-        <div class="pagination">
-            <button onclick="changePage(-1)">Предыдущая</button>
-            <span id="current-page">1</span>
-            <button onclick="changePage(1)">Следующая</button>
-        </div>
+
     </div>
     <div class="timer">
-        <p>До окончания проверки осталось приблизительно <span id="timer">0 часов 0 минут 0 секунд</span></p>
+        <p>Всего проверено {start} из {total_proxies} прокси, прошло {hours} часов {minutes} минут {seconds} секунд</p>
+        <p>До окончания проверки осталось приблизительно {remaining_hours} часов {remaining_minutes} минут {remaining_seconds} секунд</p>
+    </div>
+
+    <div class="txturl">
+        <a href="http://127.0.0.1/api.txt">Ссылка на список проверенных прокси</a>
     </div>
 
     <footer>
