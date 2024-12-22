@@ -9,6 +9,7 @@ from fake_useragent import UserAgent
 from proxy_information import ProxyInformation
 from django.shortcuts import render
 from .models import CheckedProxy
+from django.core.cache import cache
 
 
 class ProxyViewSet(viewsets.ViewSet):
@@ -155,7 +156,7 @@ class ProxyViewSet(viewsets.ViewSet):
             print(f"Checking proxy {proxy}...")
 
             # Check if stop flag is set, if yes, break out of the loop
-            if not self.running:
+            if not cache.get('proxy_check_running', False):
                 print("Stopping proxy check due to stop signal.")
                 break
 
@@ -166,6 +167,10 @@ class ProxyViewSet(viewsets.ViewSet):
 
             retry_attempts = 0
             while retry_attempts < max_retries:
+                if not cache.get('proxy_check_running', False):
+                    print("Stopping proxy check due to stop signal.")
+                    break
+
                 try:
                     response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout)
                     print(f"Checking proxy {proxy} - Response status: {response.status_code}")
@@ -181,20 +186,17 @@ class ProxyViewSet(viewsets.ViewSet):
 
     def start_proxy_check(self, request):
         print("Starting proxy check...")
-        self.running = True
+        cache.set('proxy_check_running', True)  # Store the running state in cache
         self.get_data_from_geonode()
         self.get_data_from_socksus()
         self.get_data_from_txt()
-
         self.check_proxy("https://www.cloudflare.com/")
-
         return JsonResponse({'status': 'success', 'message': 'Proxy check started'})
 
     def stop_proxy_check(self, request):
         print("Stopping proxy check...")
-        self.running = False
+        cache.set('proxy_check_running', False)  # Stop the proxy check by setting running state to False
         return JsonResponse({'status': 'success', 'message': 'Proxy check stopped'})
-
 
     def run(self):
         print("Collecting data from sources...")
