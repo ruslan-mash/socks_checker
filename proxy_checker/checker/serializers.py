@@ -4,7 +4,7 @@ from .models import CheckedProxy
 class CheckedProxySerializer(serializers.ModelSerializer):
     ip = serializers.CharField(label="ip", max_length=16)
     port = serializers.IntegerField(label="Порт")
-    protocol = serializers.CharField(label="Протокол", max_length=16)
+    protocol = serializers.CharField(label="Протокол", max_length=8)
     response_time = serializers.FloatField(label="Время ответа")
     anonymity = serializers.CharField(label="Анонимность", max_length=16)
     country = serializers.CharField(label="Страна", max_length=60)
