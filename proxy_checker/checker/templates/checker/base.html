@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socks Proxy Checker</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'checker/styles.css' %}">
+</head>
+<body>
+
+    <header>
+        <h1>Socks Proxy Checker</h1>
+    </header>
+
+    <nav>
+        <a href="{% url 'proxy_list' %}">Проверка</a>
+        <a href="{% url 'about' %}">Описание</a>
+        <a href="{% url 'faq' %}">FAQ</a>
+    </nav>
+
+    {% block content %}
+    {% endblock %}
+
+    <footer>
+        <p>&copy; 2025 Socks Checker. Mashn_hu58. ITstep.by.</p>
+    </footer>
+
+</body>
+</html>
+

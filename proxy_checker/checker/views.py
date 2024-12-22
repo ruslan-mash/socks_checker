@@ -1,7 +1,5 @@
 from django.http import JsonResponse, HttpResponse
-import threading
-from threading import Lock
-from rest_framework import viewsets, status
+from rest_framework import viewsets
 from .serializers import CheckedProxySerializer
 import requests
 import re
@@ -15,9 +13,8 @@ from .models import CheckedProxy
 
 class ProxyViewSet(viewsets.ViewSet):
     def __init__(self):
-        self.lock = threading.Lock()  # Create a lock to ensure thread safety
+        self.running = False  # Initialize running state
         self.proxies_list = []
-        self.checked_socks = []
         self.start_time = time.time()
         self.header = {'User-Agent': UserAgent().random}
         self.txt_sources = [
@@ -31,10 +28,9 @@ class ProxyViewSet(viewsets.ViewSet):
             "https://raw.githubusercontent.com/yemixzy/proxy-list/main/proxies/socks5.txt",
             "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
         ]
-        self.checked_count = 0
-        self.running = False
 
     def generate_proxy_list(self, request):
+        print("Generating proxy list...")
         # Query the database for all valid proxies
         proxies = CheckedProxy.objects.all()
 
@@ -54,7 +50,7 @@ class ProxyViewSet(viewsets.ViewSet):
             response = requests.get(f"{base_url}&page=1&sort_by=lastChecked&sort_type=desc", headers=self.header)
             response.raise_for_status()
             total = response.json().get('total', 0)
-            print(f"Total proxies available: {total}")
+            print(f"Total proxies from geonode.com available: {total}")
 
             total_pages = (total // 500) + 1
             for number_page in range(1, total_pages + 1):
@@ -88,12 +84,13 @@ class ProxyViewSet(viewsets.ViewSet):
                         port = entry.get('port')
                         if ip and port:
                             self.proxies_list.append(f"{ip}:{port}")
-
+            print(f"Total proxies from socks.us available: {len(data)}")
         except requests.exceptions.RequestException as e:
             print(f"Error getting proxies from {url}: {e}")
 
     def get_data_from_txt(self):
         pattern = r'(\d+\.\d+\.\d+\.\d+:\d+)'
+        total_proxies = 0
         for url in self.txt_sources:
             try:
                 response = requests.get(url=url, headers=self.header)
@@ -104,6 +101,8 @@ class ProxyViewSet(viewsets.ViewSet):
                 proxy_list = response.text.splitlines()
                 proxy_list_filtered = re.findall(pattern, "\n".join(proxy_list))
                 self.proxies_list.extend(proxy_list_filtered)
+                total_proxies += len(proxy_list_filtered)
+        print(f"Total proxies from txt_sources available: {total_proxies}")
 
     def timer(self, start):
         total_proxies = len(set(self.proxies_list))
@@ -151,75 +150,60 @@ class ProxyViewSet(viewsets.ViewSet):
                 print(f"Serializer errors: {serializer.errors}")
 
     def check_proxy(self, url, timeout=5, max_retries=3):
+        print("Starting proxy check loop...")
         for count, proxy in enumerate(set(self.proxies_list), start=1):
-            with self.lock:
-                if not self.running:
-                    break
+            print(f"Checking proxy {proxy}...")
+
+            # Check if stop flag is set, if yes, break out of the loop
+            if not self.running:
+                print("Stopping proxy check due to stop signal.")
+                break
+
             proxy_dict = {
                 'http': f'socks5://{proxy}',
                 'https': f'socks5://{proxy}'
             }
+
             retry_attempts = 0
             while retry_attempts < max_retries:
                 try:
                     response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout)
+                    print(f"Checking proxy {proxy} - Response status: {response.status_code}")
                     if response.ok:
                         self.check_proxy_with_proxyinformation(proxy)
-                        print(f"Proxy {proxy} valid through SOCKS5, status: {response.status_code}")
                         break
                 except requests.exceptions.RequestException as e:
                     retry_attempts += 1
+                    print(f"Error checking proxy {proxy}: {e}")
                     if retry_attempts >= max_retries:
-                        print(f"Error checking proxy {proxy} through SOCKS5: {e}")
-            self.checked_count += 1
-            self.timer(self.checked_count)
+                        print(f"Failed to check proxy {proxy} after {max_retries} attempts.")
+                        break
 
     def start_proxy_check(self, request):
-        with self.lock:  # Acquire the lock to safely modify self.running
-            if self.running:
-                return JsonResponse({'status': 'error', 'message': 'Proxy check is already running'})
+        print("Starting proxy check...")
+        self.running = True
+        self.get_data_from_geonode()
+        self.get_data_from_socksus()
+        self.get_data_from_txt()
 
-            self.running = True  # Set running to True when the check starts
+        self.check_proxy("https://www.cloudflare.com/")
 
-        print("Starting proxy check...")  # Add debug log
-
-        # Start the background thread
-        thread = threading.Thread(target=self.run)  # Updated to self.run
-        thread.start()
         return JsonResponse({'status': 'success', 'message': 'Proxy check started'})
 
     def stop_proxy_check(self, request):
-        with self.lock:  # Acquire the lock to safely modify self.running
-            if not self.running:
-                return JsonResponse({'status': 'error', 'message': 'No proxy check is running'})
-
-            self.running = False  # Set running to False to stop the check
-
-        print("Stopping proxy check...")  # Add debug log
-
+        print("Stopping proxy check...")
+        self.running = False
         return JsonResponse({'status': 'success', 'message': 'Proxy check stopped'})
 
-    # def proxy_status(self, request):
-    #     print("Checking proxy status...")  # Add debug log
-    #     if self.running:
-    #         elapsed_time = time.time() - self.start_time
-    #         remaining_time = self.timer(self.checked_count)['remaining_seconds']
-    #         total_checked = len(self.checked_socks)
-    #         return JsonResponse({
-    #             'status': 'running',
-    #             'elapsed_time': round(elapsed_time, 2),
-    #             'remaining_time': round(remaining_time, 2),
-    #             'total_checked': total_checked,
-    #         })
-    #     else:
-    #         return JsonResponse({'status': 'idle'})
 
     def run(self):
-        with self.lock:
-            self.get_data_from_geonode()
-            self.get_data_from_socksus()
-            self.get_data_from_txt()
-            self.check_proxy("https://www.cloudflare.com/")
+        print("Collecting data from sources...")
+        self.get_data_from_geonode()
+        self.get_data_from_socksus()
+        self.get_data_from_txt()
+        print("Data collection completed.")
+        self.check_proxy("https://www.cloudflare.com/")
+
 
 
 def proxy_list(request):
@@ -236,3 +220,11 @@ def proxy_list(request):
     }
 
     return render(request, 'checker/proxy_list.html', context)
+
+
+def about(request):
+    return render(request, 'checker/about.html')
+
+
+def faq(request):
+    return render(request, 'checker/faq.html')
