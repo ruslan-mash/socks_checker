@@ -1,8 +1,6 @@
 from django.http import JsonResponse, HttpResponse
-from django.shortcuts import render
 import threading
 from threading import Lock
-from .models import CheckedProxy
 from rest_framework import viewsets, status
 from .serializers import CheckedProxySerializer
 import requests
@@ -11,6 +9,9 @@ import time
 from datetime import datetime
 from fake_useragent import UserAgent
 from proxy_information import ProxyInformation
+from django.shortcuts import render
+from .models import CheckedProxy
+
 
 class ProxyViewSet(viewsets.ViewSet):
     def __init__(self):
@@ -221,16 +222,6 @@ class ProxyViewSet(viewsets.ViewSet):
             self.check_proxy("https://www.cloudflare.com/")
 
 
-# Add the proxy_list view here
-from django.shortcuts import render
-from .models import CheckedProxy
-
-
-# Other imports and ProxyViewSet class...
-
-from django.shortcuts import render
-from .models import CheckedProxy
-
 def proxy_list(request):
     proxies = CheckedProxy.objects.all()
 
@@ -245,5 +236,3 @@ def proxy_list(request):
     }
 
     return render(request, 'checker/proxy_list.html', context)
-
-
