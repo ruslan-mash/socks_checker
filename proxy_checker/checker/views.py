@@ -1,5 +1,6 @@
 from django.http import JsonResponse, HttpResponse
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from .serializers import CheckedProxySerializer
 import requests
 import re
@@ -12,8 +13,12 @@ from .models import CheckedProxy
 from django.core.cache import cache
 
 
-class ProxyViewSet(viewsets.ViewSet):
-    def __init__(self):
+class ProxyViewSet(viewsets.ModelViewSet):
+    queryset = CheckedProxy.objects.all()
+    serializer_class = CheckedProxySerializer
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.running = False  # Initialize running state
         self.proxies_list = []
         self.start_time = time.time()
@@ -29,21 +34,6 @@ class ProxyViewSet(viewsets.ViewSet):
             "https://raw.githubusercontent.com/yemixzy/proxy-list/main/proxies/socks5.txt",
             "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
         ]
-
-    def generate_proxy_list(self, request):
-        print("Generating proxy list...")
-        # Query the database for all valid proxies
-        proxies = CheckedProxy.objects.all()
-
-        # Create a response with the content of ip:port format
-        response = HttpResponse(content_type="text/plain")
-        response['Content-Disposition'] = 'attachment; filename=proxy_list.txt'
-
-        # Write the proxies to the response in ip:port format
-        for proxy in proxies:
-            response.write(f"{proxy.ip}:{proxy.port}\n")
-
-        return response
 
     def get_data_from_geonode(self):
         base_url = "https://proxylist.geonode.com/api/proxy-list?protocols=socks5&limit=500"
@@ -105,51 +95,6 @@ class ProxyViewSet(viewsets.ViewSet):
                 total_proxies += len(proxy_list_filtered)
         print(f"Total proxies from txt_sources available: {total_proxies}")
 
-    def timer(self, start):
-        total_proxies = len(set(self.proxies_list))
-        elapsed_time = time.time() - self.start_time
-        avg_time_per_proxy = elapsed_time / start if start != 0 else 0
-        remaining_proxies = total_proxies - start
-        remaining_time = avg_time_per_proxy * remaining_proxies
-
-        remaining_hours = int(remaining_time // 3600)
-        remaining_minutes = int((remaining_time % 3600) // 60)
-        remaining_seconds = int(remaining_time % 60)
-
-        return {
-            'total_checked': start,
-            'total_proxies': total_proxies,
-            'remaining_hours': remaining_hours,
-            'remaining_minutes': remaining_minutes,
-            'remaining_seconds': remaining_seconds
-        }
-
-    def check_proxy_with_proxyinformation(self, proxy):
-        checker = ProxyInformation()
-        result = checker.check_proxy(proxy)
-        if result.get("status") == True:
-            info = result.get("info", {})
-            date = datetime.today().date()
-            time = datetime.today().time()
-
-            # Save result to database using serializer
-            proxy_data = {
-                'ip': info.get('ip'),
-                'port': int(info.get('port')),
-                'protocol': info.get('protocol'),
-                'response_time': info.get('responseTime', 0),
-                'anonymity': info.get('anonymity', ''),
-                'country': info.get('country', ''),
-                'country_code': info.get('country_code', ''),
-                'date_checked': date,
-                'time_checked': time
-            }
-            serializer = CheckedProxySerializer(data=proxy_data)
-            if serializer.is_valid():
-                serializer.save()
-            else:
-                print(f"Serializer errors: {serializer.errors}")
-
     def check_proxy(self, url, timeout=5, max_retries=3):
         print("Starting proxy check loop...")
         for count, proxy in enumerate(set(self.proxies_list), start=1):
@@ -184,6 +129,68 @@ class ProxyViewSet(viewsets.ViewSet):
                         print(f"Failed to check proxy {proxy} after {max_retries} attempts.")
                         break
 
+    def check_proxy_with_proxyinformation(self, proxy):
+        checker = ProxyInformation()
+        result = checker.check_proxy(proxy)
+        if result.get("status") == True:
+            info = result.get("info", {})
+            date = datetime.today().date()
+            time = datetime.today().time()
+
+            # Save result to database using serializer
+            proxy_data = {
+                'ip': info.get('ip'),
+                'port': int(info.get('port')),
+                'protocol': info.get('protocol'),
+                'response_time': info.get('responseTime', 0),
+                'anonymity': info.get('anonymity', ''),
+                'country': info.get('country', ''),
+                'country_code': info.get('country_code', ''),
+                'date_checked': date,
+                'time_checked': time
+            }
+            serializer = CheckedProxySerializer(data=proxy_data)
+            if serializer.is_valid():
+                serializer.save()
+            else:
+                print(f"Serializer errors: {serializer.errors}")
+
+    def timer(self, start):
+        total_proxies = len(set(self.proxies_list))
+        elapsed_time = time.time() - self.start_time
+        avg_time_per_proxy = elapsed_time / start if start != 0 else 0
+        remaining_proxies = total_proxies - start
+        remaining_time = avg_time_per_proxy * remaining_proxies
+
+        remaining_hours = int(remaining_time // 3600)
+        remaining_minutes = int((remaining_time % 3600) // 60)
+        remaining_seconds = int(remaining_time % 60)
+
+        return {
+            'total_checked': start,
+            'total_proxies': total_proxies,
+            'remaining_hours': remaining_hours,
+            'remaining_minutes': remaining_minutes,
+            'remaining_seconds': remaining_seconds
+        }
+
+    @action(detail=False, methods=['get'])
+    def generate_proxy_list(self, request):
+        print("Generating proxy list...")
+        # Query the database for all valid proxies
+        proxies = CheckedProxy.objects.all()
+
+        # Create a response with the content of ip:port format
+        response = HttpResponse(content_type="text/plain")
+        response['Content-Disposition'] = 'attachment; filename=proxy_list.txt'
+
+        # Write the proxies to the response in ip:port format
+        for proxy in proxies:
+            response.write(f"{proxy.ip}:{proxy.port}\n")
+
+        return response
+
+    @action(detail=False, methods=['post'])
     def start_proxy_check(self, request):
         print("Starting proxy check...")
         cache.set('proxy_check_running', True)  # Store the running state in cache
@@ -191,37 +198,16 @@ class ProxyViewSet(viewsets.ViewSet):
         self.get_data_from_socksus()
         self.get_data_from_txt()
         self.check_proxy("https://www.cloudflare.com/")
-        return JsonResponse({'status': 'success', 'message': 'Proxy check started'})
+        return JsonResponse({"message": "Проверка прокси начата"})
 
+    @action(detail=False, methods=['post'])
     def stop_proxy_check(self, request):
-        print("Stopping proxy check...")
         cache.set('proxy_check_running', False)  # Stop the proxy check by setting running state to False
-        return JsonResponse({'status': 'success', 'message': 'Proxy check stopped'})
-
-    def run(self):
-        print("Collecting data from sources...")
-        self.get_data_from_geonode()
-        self.get_data_from_socksus()
-        self.get_data_from_txt()
-        print("Data collection completed.")
-        self.check_proxy("https://www.cloudflare.com/")
-
+        print("Stopping proxy check...")
 
 
 def proxy_list(request):
-    proxies = CheckedProxy.objects.all()
-
-    proxy_view_set = ProxyViewSet()
-    total_proxies = len(set(proxy_view_set.proxies_list))
-    start_time = proxy_view_set.start_time
-
-    context = {
-        'proxies': proxies,
-        'total_proxies': total_proxies,
-        'start_time': start_time,
-    }
-
-    return render(request, 'checker/proxy_list.html', context)
+    return render(request, 'checker/proxy_list.html')
 
 
 def about(request):

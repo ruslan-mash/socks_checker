@@ -6,8 +6,8 @@
 
     <!-- Start/Stop Buttons -->
     <div class="buttons">
-        <button class="button" onclick="startProxyCheck()">Начать проверку</button>
-        <button class="button" onclick="stopProxyCheck()">Остановить проверку</button>
+        <button class="button start" onclick="startProxyCheck()">Начать проверку</button>
+        <button class="button stop" onclick="stopProxyCheck()">Остановить проверку</button>
     </div>
 
     <!-- Proxy List Table -->
@@ -54,13 +54,41 @@
         <a href="{% url 'generate_proxy_list' %}">Download Proxy List</a>
     </p>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
-    let intervalId;
-    let startTime = {{ start_time }};
-    let totalChecked = {{ total_proxies }};  // Total proxies to be checked
+    // Function to start proxy check
+    function startProxyCheck() {
+        fetch('/start-proxy-check/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log(data.message);
+            fetchProxies();
+            fetchTimer();
+        });
+    }
 
-    // Function to fetch proxies and update the timer
+    // Function to stop proxy check
+    function stopProxyCheck() {
+        fetch('/stop-proxy-check/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log("Proxy check stopped");
+        });
+    }
+
+    // Function to update the proxy list table
     function fetchProxies() {
         fetch('/api/proxy/')
             .then(response => response.json())
@@ -86,52 +114,24 @@
             });
     }
 
-    // Function to update the timer based on checked proxies
-    function updateTimer(totalChecked) {
-        const elapsed = Math.floor((Date.now() - startTime * 1000) / 1000); // Convert start_time from seconds to ms
-        const avgTimePerProxy = elapsed / totalChecked;
-        const remainingProxies = totalProxies - totalChecked;
-        const remainingTime = avgTimePerProxy * remainingProxies;
-
-        const remainingHours = Math.floor(remainingTime / 3600);
-        const remainingMinutes = Math.floor((remainingTime % 3600) / 60);
-        const remainingSeconds = Math.floor(remainingTime % 60);
-
-        document.getElementById('timer').innerHTML = `
-            Всего проверено ${totalChecked} прокси, прошло ${Math.floor(elapsed / 3600)} часов ${Math.floor((elapsed % 3600) / 60)} минут ${elapsed % 60} секунд.
-            До окончания проверки осталось приблизительно ${remainingHours} часов ${remainingMinutes} минут ${remainingSeconds} секунд.
-        `;
+    // Function to update the timer
+    function fetchTimer() {
+        fetch('/timer/')
+            .then(response => response.json())
+            .then(data => {
+                const timerElement = document.getElementById('timer');
+                timerElement.innerHTML = `
+                    <p>Всего проверено ${data.total_checked} из ${data.total_proxies} прокси. Примерное время до окончания проверки: ${data.remaining_hours} часов ${data.remaining_minutes} минут ${data.remaining_seconds} секунд.</p>
+                `;
+            });
     }
 
-    function startProxyCheck() {
-    console.log("Start button clicked");
-    fetch('/start/')
-        .then(response => response.json())
-        .then(data => {
-            alert(data.message);
-            console.log("Start response:", data);
-            startTime = Date.now() / 1000;  // Update start time
-            fetchProxies();  // Fetch proxies immediately
-            intervalId = setInterval(fetchProxies, 10000);  // Fetch proxies every 10 seconds
-        })
-        .catch(error => console.error("Error starting proxy check:", error));
-}
+    // Initial fetch
+    fetchProxies();
+    fetchTimer();
 
-function stopProxyCheck() {
-    console.log("Stop button clicked");
-    fetch('/stop/')
-        .then(response => response.json())
-        .then(data => {
-            alert(data.message);
-            console.log("Stop response:", data);
-            clearInterval(intervalId);  // Stop updating the proxy list
-        })
-        .catch(error => console.error("Error stopping proxy check:", error));
-}
-
-
-    // Fetch proxies periodically (every 60 seconds)
-    setInterval(fetchProxies, 60000);  // Fetch proxies every 60 seconds
+    // Set interval to fetch proxies and timer every 10 seconds
+    setInterval(fetchProxies, 10000);
+    setInterval(fetchTimer, 10000);
 </script>
-
 {% endblock %}
