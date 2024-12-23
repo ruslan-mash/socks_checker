@@ -11,7 +11,7 @@ from proxy_information import ProxyInformation
 from django.shortcuts import render
 from .models import CheckedProxy
 from django.core.cache import cache
-
+from threading import Thread
 
 class ProxyViewSet(viewsets.ModelViewSet):
     queryset = CheckedProxy.objects.all()
@@ -19,7 +19,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.running = False  # Initialize running state
+        self.running = False  # Инициализируем состояние проверки
         self.proxies_list = []
         self.start_time = time.time()
         self.header = {'User-Agent': UserAgent().random}
@@ -100,7 +100,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         for count, proxy in enumerate(set(self.proxies_list), start=1):
             print(f"Checking proxy {proxy}...")
 
-            # Check if stop flag is set, if yes, break out of the loop
+            # Проверяем, если флаг остановки установлен, то выходим из цикла
             if not cache.get('proxy_check_running', False):
                 print("Stopping proxy check due to stop signal.")
                 break
@@ -137,7 +137,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
             date = datetime.today().date()
             time = datetime.today().time()
 
-            # Save result to database using serializer
+            # Сохраняем результат в базу данных через сериализатор
             proxy_data = {
                 'ip': info.get('ip'),
                 'port': int(info.get('port')),
@@ -155,24 +155,26 @@ class ProxyViewSet(viewsets.ModelViewSet):
             else:
                 print(f"Serializer errors: {serializer.errors}")
 
-    def timer(self, start):
+    def timer(self, request):
         total_proxies = len(set(self.proxies_list))
         elapsed_time = time.time() - self.start_time
-        avg_time_per_proxy = elapsed_time / start if start != 0 else 0
-        remaining_proxies = total_proxies - start
+        avg_time_per_proxy = elapsed_time / total_proxies if total_proxies != 0 else 0
+        remaining_proxies = total_proxies - total_proxies  # Adjust this logic as needed
         remaining_time = avg_time_per_proxy * remaining_proxies
 
         remaining_hours = int(remaining_time // 3600)
         remaining_minutes = int((remaining_time % 3600) // 60)
         remaining_seconds = int(remaining_time % 60)
 
-        return {
-            'total_checked': start,
+        timer_data = {
+            'total_checked': total_proxies,
             'total_proxies': total_proxies,
             'remaining_hours': remaining_hours,
             'remaining_minutes': remaining_minutes,
             'remaining_seconds': remaining_seconds
         }
+
+        return JsonResponse(timer_data)
 
     @action(detail=False, methods=['get'])
     def generate_proxy_list(self, request):
@@ -180,30 +182,41 @@ class ProxyViewSet(viewsets.ModelViewSet):
         # Query the database for all valid proxies
         proxies = CheckedProxy.objects.all()
 
-        # Create a response with the content of ip:port format
-        response = HttpResponse(content_type="text/plain")
-        response['Content-Disposition'] = 'attachment; filename=proxy_list.txt'
+        # Create a list of proxies in ip:port format
+        proxy_list = [{"ip": proxy.ip, "port": proxy.port} for proxy in proxies]
 
-        # Write the proxies to the response in ip:port format
-        for proxy in proxies:
-            response.write(f"{proxy.ip}:{proxy.port}\n")
-
-        return response
+        # Return the list as a JSON response
+        return JsonResponse({'proxy_list': proxy_list})
 
     @action(detail=False, methods=['post'])
     def start_proxy_check(self, request):
         print("Starting proxy check...")
-        cache.set('proxy_check_running', True)  # Store the running state in cache
+        self.running = True
+        cache.set('proxy_check_running', True)
+
+        # Получаем прокси из разных источников
         self.get_data_from_geonode()
         self.get_data_from_socksus()
         self.get_data_from_txt()
-        self.check_proxy("https://www.cloudflare.com/")
-        return JsonResponse({"message": "Проверка прокси начата"})
+
+        # Получаем URL для проверки из запроса, если он не передан, используем значение по умолчанию
+        url_to_check = request.data.get('url', 'https://www.cloudflare.com/')
+
+        # Запускаем процесс проверки в отдельном потоке
+        thread = Thread(target=self.check_proxy, args=(url_to_check,))
+        thread.start()
+
+        return JsonResponse({'status': 'Proxy check started'})
+
+
+
 
     @action(detail=False, methods=['post'])
     def stop_proxy_check(self, request):
-        cache.set('proxy_check_running', False)  # Stop the proxy check by setting running state to False
         print("Stopping proxy check...")
+        self.running = False
+        cache.set('proxy_check_running', False)
+        return JsonResponse({'status': 'Proxy check stopped'})
 
 
 def proxy_list(request):
