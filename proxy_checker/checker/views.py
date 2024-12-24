@@ -22,8 +22,9 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.running = False  # Инициализируем состояние проверки
-        self.proxies_list = ['0.0.0.0:0000']
+        self.proxies_list = []
         self.start_time = time.time()
+        cache.set('start_time', self.start_time)
         self.header = {'User-Agent': UserAgent().random}
         self.txt_sources = [
             "https://spys.me/socks.txt",
@@ -65,6 +66,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
                         if ip and port:
                             self.proxies_list.append(f"{ip}:{port}")
                     print(f"Page {number_page} processed. Total proxies collected: {len(self.proxies_list)}")
+                    # Update the cache with the total proxies count after fetching
+                    cache.set('total_proxies', len(self.proxies_list))
                 except requests.exceptions.RequestException as e:
                     print(f"Error getting proxies from {page_url}: {e}")
 
@@ -84,6 +87,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
                         port = entry.get('port')
                         if ip and port:
                             self.proxies_list.append(f"{ip}:{port}")
+                            # Update the cache with the total proxies count after fetching
+                            cache.set('total_proxies', len(self.proxies_list))
             print(f"Total proxies from socks.us available: {len(data)}")
         except requests.exceptions.RequestException as e:
             print(f"Error getting proxies from {url}: {e}")
@@ -101,6 +106,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 proxy_list = response.text.splitlines()
                 proxy_list_filtered = re.findall(pattern, "\n".join(proxy_list))
                 self.proxies_list.extend(proxy_list_filtered)
+                # Update the cache with the total proxies count after fetching
+                cache.set('total_proxies', len(self.proxies_list))
                 total_proxies += len(proxy_list_filtered)
         print(f"Total proxies from txt_sources available: {total_proxies}")
 
@@ -171,7 +178,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
     def timer(self):
         with self.lock:
-            total_proxies = len(set(self.proxies_list))  # Total number of proxies to check
+            # Retrieve total proxies from cache, if not set, calculate it
+            total_proxies = cache.get('total_proxies', len(set(self.proxies_list)))
             checked_proxies_count = cache.get(self.checked_proxies_count_key)  # Get from cache
 
         remaining_proxies = total_proxies - checked_proxies_count  # Remaining proxies to check
@@ -185,7 +193,13 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 'remaining_seconds': 0
             }
 
-        elapsed_time = time.time() - self.start_time
+        start_time = cache.get('start_time')
+        if start_time is None:
+            start_time = time.time()  # если в кеше нет времени, вычисляем на основе текущего времени
+            cache.set('start_time', start_time)  # сохраняем это значение в кеш
+        elapsed_time = time.time() - start_time
+        cache.set('elapsed_time', elapsed_time)  # обновляем время в кеше
+        print(f'elapsed_time {elapsed_time}')
         avg_time_per_proxy = elapsed_time / checked_proxies_count if checked_proxies_count != 0 else 0
         remaining_time = avg_time_per_proxy * remaining_proxies
 
@@ -217,6 +231,9 @@ class ProxyViewSet(viewsets.ModelViewSet):
         self.get_data_from_socksus()
         self.get_data_from_txt()
 
+        # Cache the total proxies count once the proxies are collected
+        cache.set('total_proxies', len(self.proxies_list))
+
         # Get URL to check from the request, or use the default value
         url_to_check = request.data.get('url', 'https://www.cloudflare.com/')
 
@@ -235,6 +252,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         self.running = False
         cache.set('proxy_check_running', False)
         cache.set(self.checked_proxies_count_key, 0)
+        cache.set('total_proxies', 0)  # Reset total proxies in cache
         return JsonResponse({'status': 'Proxy check stopped'})
 
 
