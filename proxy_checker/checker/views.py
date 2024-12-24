@@ -23,8 +23,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
         super().__init__(*args, **kwargs)
         self.running = False  # Инициализируем состояние проверки
         self.proxies_list = []
-        self.start_time = time.time()
-        cache.set('start_time', self.start_time)
+        self.start_time = time.perf_counter()
+        # cache.set('start_time', self.start_time)
         self.header = {'User-Agent': UserAgent().random}
         self.txt_sources = [
             "https://spys.me/socks.txt",
@@ -195,11 +195,17 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
         start_time = cache.get('start_time')
         if start_time is None:
-            start_time = time.time()  # если в кеше нет времени, вычисляем на основе текущего времени
-            cache.set('start_time', start_time)  # сохраняем это значение в кеш
-        elapsed_time = time.time() - start_time
-        cache.set('elapsed_time', elapsed_time)  # обновляем время в кеше
-        print(f'elapsed_time {elapsed_time}')
+            start_time = time.perf_counter()  # Если время не установлено, устанавливаем его
+            cache.set('start_time', start_time)
+            print(f"start_time was None, setting to {start_time}")
+        else:
+            print(f"start_time already set: {start_time}")
+
+        elapsed_time = time.perf_counter() - start_time
+        cache.set('elapsed_time', elapsed_time)  # Обновляем время в кеше
+        print(f' time: {time.perf_counter()}')
+        print(f'Elapsed time: {elapsed_time}')  # Для отладки
+
         avg_time_per_proxy = elapsed_time / checked_proxies_count if checked_proxies_count != 0 else 0
         remaining_time = avg_time_per_proxy * remaining_proxies
 
