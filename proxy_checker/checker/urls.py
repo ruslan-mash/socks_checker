@@ -19,5 +19,4 @@ urlpatterns += [
     path('start-proxy-check/', ProxyViewSet.as_view({'post': 'start_proxy_check'}), name='start_proxy_check'),
     path('stop-proxy-check/', ProxyViewSet.as_view({'post': 'stop_proxy_check'}), name='stop_proxy_check'),
     path('generate-proxy-list/', ProxyViewSet.as_view({'get': 'generate_proxy_list'}), name='generate_proxy_list'),
-    path('timer/', ProxyViewSet.as_view({'get': 'timer'}), name='timer'),
-]
+    path('timer/', ProxyViewSet.as_view({'get': 'get_timer'}), name='get_timer'),]

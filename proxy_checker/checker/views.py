@@ -11,7 +11,9 @@ from proxy_information import ProxyInformation
 from django.shortcuts import render
 from .models import CheckedProxy
 from django.core.cache import cache
-from threading import Thread
+from threading import Thread, Lock
+from rest_framework.response import Response
+
 
 class ProxyViewSet(viewsets.ModelViewSet):
     queryset = CheckedProxy.objects.all()
@@ -20,7 +22,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.running = False  # Инициализируем состояние проверки
-        self.proxies_list = []
+        self.proxies_list = ['0.0.0.0:0000']
         self.start_time = time.time()
         self.header = {'User-Agent': UserAgent().random}
         self.txt_sources = [
@@ -34,6 +36,13 @@ class ProxyViewSet(viewsets.ModelViewSet):
             "https://raw.githubusercontent.com/yemixzy/proxy-list/main/proxies/socks5.txt",
             "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
         ]
+        self.lock = Lock()  # Lock to ensure thread safety when modifying proxies_list
+        self.checked_proxies_count = 0  # Add a counter to track the number of checked proxies
+        self.checked_proxies_count_key = "checked_proxies_count"
+
+        # Initialize the cache for checked proxies count
+        if not cache.get(self.checked_proxies_count_key):
+            cache.set(self.checked_proxies_count_key, 0)
 
     def get_data_from_geonode(self):
         base_url = "https://proxylist.geonode.com/api/proxy-list?protocols=socks5&limit=500"
@@ -97,7 +106,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
     def check_proxy(self, url, timeout=5, max_retries=3):
         print("Starting proxy check loop...")
-        for count, proxy in enumerate(set(self.proxies_list), start=1):
+        with self.lock:
+            proxies_to_check = set(self.proxies_list)  # Lock the list to avoid concurrent modifications
+        for count, proxy in enumerate(proxies_to_check, start=1):
+            # Use cache to get and update the proxy count
+            checked_proxies_count = cache.get(self.checked_proxies_count_key)
+            cache.set(self.checked_proxies_count_key, checked_proxies_count + 1)
             print(f"Checking proxy {proxy}...")
 
             # Проверяем, если флаг остановки установлен, то выходим из цикла
@@ -155,38 +169,42 @@ class ProxyViewSet(viewsets.ModelViewSet):
             else:
                 print(f"Serializer errors: {serializer.errors}")
 
-    def timer(self, request):
-        total_proxies = len(set(self.proxies_list))
+    def timer(self):
+        with self.lock:
+            total_proxies = len(set(self.proxies_list))  # Total number of proxies to check
+            checked_proxies_count = cache.get(self.checked_proxies_count_key)  # Get from cache
+
+        remaining_proxies = total_proxies - checked_proxies_count  # Remaining proxies to check
+
+        if total_proxies == 0 or checked_proxies_count == 0:
+            return {
+                'total_checked': 0,
+                'total_proxies': total_proxies,
+                'remaining_hours': 0,
+                'remaining_minutes': 0,
+                'remaining_seconds': 0
+            }
+
         elapsed_time = time.time() - self.start_time
-        avg_time_per_proxy = elapsed_time / total_proxies if total_proxies != 0 else 0
-        remaining_proxies = total_proxies - total_proxies  # Adjust this logic as needed
+        avg_time_per_proxy = elapsed_time / checked_proxies_count if checked_proxies_count != 0 else 0
         remaining_time = avg_time_per_proxy * remaining_proxies
 
         remaining_hours = int(remaining_time // 3600)
         remaining_minutes = int((remaining_time % 3600) // 60)
         remaining_seconds = int(remaining_time % 60)
 
-        timer_data = {
-            'total_checked': total_proxies,
+        return {
+            'total_checked': checked_proxies_count,
             'total_proxies': total_proxies,
             'remaining_hours': remaining_hours,
             'remaining_minutes': remaining_minutes,
             'remaining_seconds': remaining_seconds
         }
 
-        return JsonResponse(timer_data)
-
     @action(detail=False, methods=['get'])
-    def generate_proxy_list(self, request):
-        print("Generating proxy list...")
-        # Query the database for all valid proxies
-        proxies = CheckedProxy.objects.all()
-
-        # Create a list of proxies in ip:port format
-        proxy_list = [{"ip": proxy.ip, "port": proxy.port} for proxy in proxies]
-
-        # Return the list as a JSON response
-        return JsonResponse({'proxy_list': proxy_list})
+    def get_timer(self, request):
+        timer_data = self.timer()
+        return Response(timer_data)
 
     @action(detail=False, methods=['post'])
     def start_proxy_check(self, request):
@@ -194,28 +212,29 @@ class ProxyViewSet(viewsets.ModelViewSet):
         self.running = True
         cache.set('proxy_check_running', True)
 
-        # Получаем прокси из разных источников
+        # Get proxies from different sources
         self.get_data_from_geonode()
         self.get_data_from_socksus()
         self.get_data_from_txt()
 
-        # Получаем URL для проверки из запроса, если он не передан, используем значение по умолчанию
+        # Get URL to check from the request, or use the default value
         url_to_check = request.data.get('url', 'https://www.cloudflare.com/')
 
-        # Запускаем процесс проверки в отдельном потоке
+        # Start the proxy check process in a separate thread
         thread = Thread(target=self.check_proxy, args=(url_to_check,))
         thread.start()
 
-        return JsonResponse({'status': 'Proxy check started'})
+        # Call the timer method here
+        timer_data = self.timer()
 
-
-
+        return JsonResponse({'status': 'Proxy check started', 'timer_data': timer_data})
 
     @action(detail=False, methods=['post'])
     def stop_proxy_check(self, request):
         print("Stopping proxy check...")
         self.running = False
         cache.set('proxy_check_running', False)
+        cache.set(self.checked_proxies_count_key, 0)
         return JsonResponse({'status': 'Proxy check stopped'})
 
 

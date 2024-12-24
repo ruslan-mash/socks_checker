@@ -58,7 +58,6 @@
 
 {% block scripts %}
 <script>
-    // Функция для начала проверки прокси
     function startProxyCheck() {
         fetch('/start-proxy-check/', {
             method: 'POST',
@@ -71,10 +70,12 @@
             console.log(data.message);
             fetchProxyData();
             updateTimer();
-        });
+            document.querySelector('.start').disabled = true;  // Disable the start button
+            document.querySelector('.stop').disabled = false;  // Enable the stop button
+        })
+        .catch(error => console.error('Error:', error));
     }
 
-    // Функция для остановки проверки прокси
     function stopProxyCheck() {
         fetch('/stop-proxy-check/', {
             method: 'POST',
@@ -85,7 +86,10 @@
         .then(response => response.json())
         .then(data => {
             console.log("Proxy check stopped");
-        });
+            document.querySelector('.start').disabled = false;  // Enable the start button
+            document.querySelector('.stop').disabled = true;  // Disable the stop button
+        })
+        .catch(error => console.error('Error:', error));
     }
 
     // Функция для получения данных о прокси
@@ -114,20 +118,21 @@
             });
     }
 
-    // Функция для обновления таймера
     function updateTimer() {
         fetch('/timer/')
             .then(response => response.json())
             .then(data => {
-                const timerDiv = document.getElementById('timer');
-                timerDiv.innerHTML = `
-                    <p>Всего проверено ${data.total_checked} из ${data.total_proxies} прокси.
-                    Примерное время до окончания проверки: ${data.remaining_hours} часов
-                    ${data.remaining_minutes} минут ${data.remaining_seconds} секунд.</p>
-                `;
-            });
+                if (data.total_proxies > 0) {
+                    const timerDiv = document.getElementById('timer');
+                    timerDiv.innerHTML = `
+                        <p>Всего проверено ${data.total_checked} из ${data.total_proxies} прокси.
+                        Примерное время до окончания проверки: ${data.remaining_hours} часов
+                        ${data.remaining_minutes} минут ${data.remaining_seconds} секунд.</p>
+                    `;
+                }
+            })
+            .catch(error => console.error('Error fetching timer data:', error));
     }
-
     // Автоматическое обновление данных при загрузке страницы
     document.addEventListener('DOMContentLoaded', () => {
         fetchProxyData();
