@@ -226,6 +226,18 @@ class ProxyViewSet(viewsets.ModelViewSet):
         timer_data = self.timer()
         return Response(timer_data)
 
+    @action(detail=False, methods=['get'])
+    def generate_proxy_list(self, request):
+        print("Generating proxy list...")
+        # Query the database for all valid proxies
+        proxies = CheckedProxy.objects.all()
+
+        # Create a list of proxies in ip:port format
+        proxy_list = [{"ip": proxy.ip, "port": proxy.port} for proxy in proxies]
+
+        # Return the list as a JSON response
+        return JsonResponse({'proxy_list': proxy_list})
+
     @action(detail=False, methods=['post'])
     def start_proxy_check(self, request):
         print("Starting proxy check...")
