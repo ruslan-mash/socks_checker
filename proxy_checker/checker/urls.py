@@ -1,22 +1,20 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProxyViewSet, proxy_list, about, faq
+from .views import ProxyViewSet, CleanOldRecordsView, ProxyListView, AboutView, FaqView
 
 # Create a router and register our viewsets with it.
 router = DefaultRouter()
 router.register(r'proxies', ProxyViewSet, basename='proxy')
 
-# The API URLs are now determined automatically by the router.
 urlpatterns = [
     path('', include(router.urls)),
-    path('proxy-list/', proxy_list, name='proxy_list'),
-    path('about/', about, name='about'),
-    path('faq/', faq, name='faq'),
-]
-
-# Additional URL patterns for custom actions in ProxyViewSet
-urlpatterns += [
     path('start-proxy-check/', ProxyViewSet.as_view({'post': 'start_proxy_check'}), name='start_proxy_check'),
     path('stop-proxy-check/', ProxyViewSet.as_view({'post': 'stop_proxy_check'}), name='stop_proxy_check'),
-    path('generate-proxy-list/', ProxyViewSet.as_view({'get': 'generate_proxy_list'}), name='generate_proxy_list'),
-    path('timer/', ProxyViewSet.as_view({'get': 'get_timer'}), name='get_timer'),]
+    path('generate-txt-list/', ProxyViewSet.as_view({'get': 'generate_txt_list'}), name='generate_txt_list'),
+    path('generate-json-list/', ProxyViewSet.as_view({'get': 'generate_json_list'}), name='generate_json_list'),
+    path('timer/', ProxyViewSet.as_view({'get': 'get_timer'}), name='get_timer'),
+    path('clean-old-records/', CleanOldRecordsView.as_view(), name='clean_old_records'),
+    path('proxy-list/', ProxyListView.as_view(), name='proxy_list'),
+    path('about/', AboutView.as_view(), name='about'),
+    path('faq/', FaqView.as_view(), name='faq'),
+]

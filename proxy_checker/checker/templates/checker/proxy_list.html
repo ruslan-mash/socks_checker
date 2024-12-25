@@ -8,6 +8,7 @@
     <div class="buttons">
         <button class="button start" onclick="startProxyCheck()">Начать проверку</button>
         <button class="button stop" onclick="stopProxyCheck()">Остановить проверку</button>
+        <button class="button clean" onclick="cleanOldRecords()">Очистить старые записи</button>
     </div>
 
     <!-- Таблица списка прокси -->
@@ -50,8 +51,13 @@
 </div>
 
 <div>
+    <p>Список проверенных прокси в формате txt можно получить по ссылке
+        <a href="{% url 'generate_txt_list' %}">ссылке</a>
+    </p>
+</div>
+<div>
     <p>Список проверенных прокси в формате json можно получить по ссылке
-        <a href="{% url 'generate_proxy_list' %}">Download Proxy List</a>
+        <a href="{% url 'generate_json_list' %}">ссылке</a>
     </p>
 </div>
 {% endblock %}
@@ -91,6 +97,21 @@
         })
         .catch(error => console.error('Error:', error));
     }
+    // Функция для очистки старых записей
+        function cleanOldRecords() {
+            fetch('/clean-old-records/', {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                fetchProxyData();  // Обновить данные после очистки
+            })
+            .catch(error => console.error('Error:', error));
+        }
 
     // Функция для получения данных о прокси
     function fetchProxyData() {

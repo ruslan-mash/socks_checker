@@ -1,18 +1,24 @@
 from django.http import JsonResponse, HttpResponse
+from django.views import View
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from .serializers import CheckedProxySerializer
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+
 import requests
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from fake_useragent import UserAgent
 from proxy_information import ProxyInformation
 from django.shortcuts import render
-from .models import CheckedProxy
 from django.core.cache import cache
 from threading import Thread, Lock
-from rest_framework.response import Response
+
+from .serializers import CheckedProxySerializer
+from .models import CheckedProxy
+
 
 
 class ProxyViewSet(viewsets.ModelViewSet):
@@ -156,7 +162,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         if result.get("status") == True:
             info = result.get("info", {})
             date = datetime.today().date()
-            time = datetime.today().time()
+            time = datetime.today().strftime('%H:%M:%S')
 
             # Сохраняем результат в базу данных через сериализатор
             proxy_data = {
@@ -227,8 +233,24 @@ class ProxyViewSet(viewsets.ModelViewSet):
         return Response(timer_data)
 
     @action(detail=False, methods=['get'])
-    def generate_proxy_list(self, request):
-        print("Generating proxy list...")
+    def generate_txt_list(self, request):
+        print("Generating txt list...")
+        # Query the database for all valid proxies
+        proxies = CheckedProxy.objects.all()
+
+        # Create a response with the content of ip:port format
+        response = HttpResponse(content_type="text/plain")
+        response['Content-Disposition'] = 'attachment; filename=proxy_list.txt'
+
+        # Write the proxies to the response in ip:port format
+        for proxy in proxies:
+            response.write(f"{proxy.ip}:{proxy.port}\n")
+
+        return response
+
+    @action(detail=False, methods=['get'])
+    def generate_json_list(self, request):
+        print("Generating json list...")
         # Query the database for all valid proxies
         proxies = CheckedProxy.objects.all()
 
@@ -274,13 +296,29 @@ class ProxyViewSet(viewsets.ModelViewSet):
         return JsonResponse({'status': 'Proxy check stopped'})
 
 
-def proxy_list(request):
-    return render(request, 'checker/proxy_list.html')
+class CleanOldRecordsView(APIView):
+
+    def delete(self, request, *args, **kwargs):
+        try:
+            threshold_date = date.today() - timedelta(days=1)  # Данные старше 1 дня
+            old_records = CheckedProxy.objects.filter(date_checked__lt=threshold_date)
+            count, _ = old_records.delete()
+            return Response({"message": f"Удалено {count} старых записей."}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-def about(request):
-    return render(request, 'checker/about.html')
+# Представление для списка прокси
+class ProxyListView(View):
+    def get(self, request, *args, **kwargs):
+        return render(request, 'checker/proxy_list.html')
 
+# Представление для страницы "О нас"
+class AboutView(View):
+    def get(self, request, *args, **kwargs):
+        return render(request, 'checker/about.html')
 
-def faq(request):
-    return render(request, 'checker/faq.html')
+# Представление для страницы FAQ
+class FaqView(View):
+    def get(self, request, *args, **kwargs):
+        return render(request, 'checker/faq.html')
