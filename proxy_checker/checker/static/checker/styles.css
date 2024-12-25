@@ -104,3 +104,6 @@ footer {
     border-left: 3px solid var(--background-color);
     background-color: #f9f9f9;
 }
+.container p:first-of-type {
+    text-indent: 30px !important;
+}
