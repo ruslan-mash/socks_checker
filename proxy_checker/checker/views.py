@@ -27,7 +27,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.running = False  # Инициализируем состояние проверки
+        # self.running = False  # Инициализируем состояние проверки
         self.proxies_list = []
         self.start_time = time.perf_counter()
         # cache.set('start_time', self.start_time)
@@ -117,7 +117,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 total_proxies += len(proxy_list_filtered)
         print(f"Total proxies from txt_sources available: {total_proxies}")
 
-    def check_proxy(self, url, timeout=5, max_retries=3):
+    def check_proxy(self, url, timeout=10, max_retries=3):
         print("Starting proxy check loop...")
         with self.lock:
             proxies_to_check = set(self.proxies_list)  # Lock the list to avoid concurrent modifications
@@ -128,9 +128,10 @@ class ProxyViewSet(viewsets.ModelViewSet):
             print(f"Checking proxy {proxy}...")
 
             # Проверяем, если флаг остановки установлен, то выходим из цикла
-            if not cache.get('proxy_check_running', False):
-                print("Stopping proxy check due to stop signal.")
-                break
+            with self.lock:
+                if not cache.get('proxy_check_running', False):
+                    print("Stopping proxy check due to stop signal in start check_proxy.")
+                    break
 
             proxy_dict = {
                 'http': f'socks5://{proxy}',
@@ -139,9 +140,10 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
             retry_attempts = 0
             while retry_attempts < max_retries:
-                if not cache.get('proxy_check_running', False):
-                    print("Stopping proxy check due to stop signal.")
-                    break
+                with self.lock:
+                    if not cache.get('proxy_check_running', False):
+                        print("Stopping proxy check due to stop signal while retry_attempts.")
+                        return
 
                 try:
                     response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout)
@@ -163,13 +165,14 @@ class ProxyViewSet(viewsets.ModelViewSet):
             info = result.get("info", {})
             date = datetime.today().date()
             time = datetime.today().strftime('%H:%M:%S')
-
+            # Format the response_time to 2 decimal places
+            response_time = round(info.get('responseTime', 0), 2)
             # Сохраняем результат в базу данных через сериализатор
             proxy_data = {
                 'ip': info.get('ip'),
                 'port': int(info.get('port')),
                 'protocol': info.get('protocol'),
-                'response_time': info.get('responseTime', 0),
+                'response_time': response_time,
                 'anonymity': info.get('anonymity', ''),
                 'country': info.get('country', ''),
                 'country_code': info.get('country_code', ''),
@@ -263,7 +266,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def start_proxy_check(self, request):
         print("Starting proxy check...")
-        self.running = True
+        # self.running = True
         cache.set('proxy_check_running', True)
 
         # Get proxies from different sources
@@ -275,7 +278,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         cache.set('total_proxies', len(self.proxies_list))
 
         # Get URL to check from the request, or use the default value
-        url_to_check = request.data.get('url', 'https://www.cloudflare.com/')
+        url_to_check = request.data.get('url', 'https://www.google.com/')
 
         # Start the proxy check process in a separate thread
         thread = Thread(target=self.check_proxy, args=(url_to_check,))
@@ -289,7 +292,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def stop_proxy_check(self, request):
         print("Stopping proxy check...")
-        self.running = False
+        # self.running = False
         cache.set('proxy_check_running', False)
         cache.set(self.checked_proxies_count_key, 0)
         cache.set('total_proxies', 0)  # Reset total proxies in cache

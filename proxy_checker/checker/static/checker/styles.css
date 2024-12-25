@@ -37,6 +37,9 @@ nav a {
     flex: 1;
 }
 
+div .container p {
+    text-indent: 30px !important; /* Отступ с красной строки */
+}
 
 h1, h2 {
     text-align: center;
@@ -103,7 +106,4 @@ footer {
     padding: 10px;
     border-left: 3px solid var(--background-color);
     background-color: #f9f9f9;
-}
-.container p:first-of-type {
-    text-indent: 30px !important;
 }
