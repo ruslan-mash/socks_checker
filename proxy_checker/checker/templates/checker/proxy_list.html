@@ -64,6 +64,8 @@
 
 {% block scripts %}
 <script>
+
+    // Функция старта проверки
     function startProxyCheck() {
         fetch('/start-proxy-check/', {
             method: 'POST',
@@ -82,6 +84,7 @@
         .catch(error => console.error('Error:', error));
     }
 
+    // Функция остановки проверки
     function stopProxyCheck() {
         fetch('/stop-proxy-check/', {
             method: 'POST',
@@ -138,6 +141,8 @@
                 });
             });
     }
+
+    // Функция обновления таймера
 
     function updateTimer() {
         fetch('/timer/')
