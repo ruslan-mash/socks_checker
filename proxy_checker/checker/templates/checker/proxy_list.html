@@ -64,7 +64,6 @@
 
 {% block scripts %}
 <script>
-
     // Функция старта проверки
     function startProxyCheck() {
         fetch('/start-proxy-check/', {
@@ -75,7 +74,7 @@
         })
         .then(response => response.json())
         .then(data => {
-            console.log(data.message);
+            console.log('Proxy check started', data);
             fetchProxyData();
             updateTimer();
             document.querySelector('.start').disabled = true;  // Disable the start button
@@ -94,27 +93,28 @@
         })
         .then(response => response.json())
         .then(data => {
-            console.log("Proxy check stopped");
+            console.log('Proxy check stopped', data);
             document.querySelector('.start').disabled = false;  // Enable the start button
             document.querySelector('.stop').disabled = true;  // Disable the stop button
         })
         .catch(error => console.error('Error:', error));
     }
+
     // Функция для очистки старых записей
-        function cleanOldRecords() {
-            fetch('/clean-old-records/', {
-                method: 'DELETE',
-                headers: {
-                    'X-CSRFToken': '{{ csrf_token }}',
-                },
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                fetchProxyData();  // Обновить данные после очистки
-            })
-            .catch(error => console.error('Error:', error));
-        }
+    function cleanOldRecords() {
+        fetch('/clean-old-records/', {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            fetchProxyData();  // Обновить данные после очистки
+        })
+        .catch(error => console.error('Error:', error));
+    }
 
     // Функция для получения данных о прокси
     function fetchProxyData() {
@@ -139,26 +139,31 @@
                     `;
                     tableBody.appendChild(row);
                 });
-            });
+            })
+            .catch(error => console.error('Error fetching proxy data:', error));
     }
 
     // Функция обновления таймера
-
     function updateTimer() {
         fetch('/timer/')
             .then(response => response.json())
             .then(data => {
+                const timerDiv = document.getElementById('timer');
                 if (data.total_proxies > 0) {
-                    const timerDiv = document.getElementById('timer');
                     timerDiv.innerHTML = `
                         <p>Всего проверено ${data.total_checked} из ${data.total_proxies} прокси.
                         Примерное время до окончания проверки: ${data.remaining_hours} часов
                         ${data.remaining_minutes} минут ${data.remaining_seconds} секунд.</p>
                     `;
+                } else {
+                    timerDiv.innerHTML = `
+                        <p>Всего проверено 0 из 0 прокси. Примерное время до окончания проверки: 0 часов 0 минут 0 секунд.</p>
+                    `;
                 }
             })
             .catch(error => console.error('Error fetching timer data:', error));
     }
+
     // Автоматическое обновление данных при загрузке страницы
     document.addEventListener('DOMContentLoaded', () => {
         fetchProxyData();

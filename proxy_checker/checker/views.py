@@ -8,18 +8,14 @@ from rest_framework import status
 
 import requests
 import re
-import time
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from fake_useragent import UserAgent
 from proxy_information import ProxyInformation
 from django.shortcuts import render
 from django.core.cache import cache
-from threading import Thread, Lock
-from multiprocessing import Process, Manager
-
+from threading import Thread, Lock, Event
 from .serializers import CheckedProxySerializer
 from .models import CheckedProxy
-
 
 
 class ProxyViewSet(viewsets.ModelViewSet):
@@ -29,7 +25,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.proxies_list = []
-        self.start_time = time.perf_counter()
+        self.start_time = datetime.now()
         self.header = {'User-Agent': UserAgent().random}
         self.txt_sources = [
             "https://spys.me/socks.txt",
@@ -43,8 +39,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
             "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
         ]
         self.lock = Lock()  # Блокировка для обеспечения безопасности потока при изменении proxy_list
-        self.checked_proxies_count = 0  # Добавить счетчик для отслеживания количества проверенных прокси
         self.checked_proxies_count_key = "checked_proxies_count"
+        self.stop_event = Event()
 
         # Инициализируем кэш для количества проверенных прокси
         if not cache.get(self.checked_proxies_count_key):
@@ -119,51 +115,40 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 total_proxies += len(proxy_list_filtered)
         print(f"Всего прокси из txt_sources : {total_proxies}")
 
-    #Функция предварительной проверки прокси на ответ с передачей на дентальную проверку
-    def check_proxy(self, url, timeout=10, max_retries=3):
+    # Функция предварительной проверки прокси на ответ с передачей на дентальную проверку
+    def check_proxy(self, url, timeout=5, max_retries=3):
         print("Запуск цикла проверки прокси...")
         proxies_to_check = set(self.proxies_list)
-        for count, proxy in enumerate(proxies_to_check, start=1): #подсчет проверенных прокси
-            # использование кэша для получения и обновления количества проверенных прокси
-            checked_proxies_count = cache.get(self.checked_proxies_count_key)
+        for count, proxy in enumerate(proxies_to_check, start=1):
+            # Проверяем, если флаг остановки установлен, то выходим из цикла
+            with self.lock:
+                if not cache.get('proxy_check_running', True):
+                    print("Остановка проверки прокси по флагу проверки")
+                    break
+            # if self.stop_event.is_set():
+            #     print("Проверка прокси была остановлена.")
+            #     break
+
+            checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
             cache.set(self.checked_proxies_count_key, checked_proxies_count + 1)
             print(f"Проверено прокси {proxy}...")
-
-            # Проверяем, если флаг остановки установлен, то выходим из цикла. Это для функции остановки проверки принудительно
-            # Но эта штука выключает проверку на 12-31 прокси сама
-            # with self.lock:
-            #     if not cache.get('proxy_check_running', False):
-            #         print("Остановка проверки прокси из-за сигнала остановки в start check_proxy.")
-            #         break
 
             proxy_dict = {
                 'http': f'socks5://{proxy}',
                 'https': f'socks5://{proxy}'
             }
 
-            retry_attempts = 0
-            while retry_attempts < max_retries:
-                # Проверяем, если флаг остановки установлен, то выходим из цикла. Это для функции остановки проверки принудительно
-                # Но эта штука выключает проверку на 12-31 прокси сама
-                # with self.lock:
-                #     if not cache.get('proxy_check_running', False):
-                #         print("SОстановка проверки прокси из-за сигнала остановки во время retry_attempts.")
-                #         return
-
+            for _ in range(max_retries):
                 try:
                     response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout)
-                    print(f"Проверка прокси {proxy} - Ответ: {response.status_code}")
+                    print(f"Proxy {proxy} check - Response: {response.status_code}")
                     if response.ok:
                         self.check_proxy_with_proxyinformation(proxy)
                         break
                 except requests.exceptions.RequestException as e:
-                    retry_attempts += 1
-                    print(f"Ошибка проверки прокси {proxy}: {e}")
-                    if retry_attempts >= max_retries:
-                        print(f"Ошибка проверки прокси {proxy} после {max_retries} попыток.")
-                        break
+                    print(f"Error checking proxy {proxy}: {e}")
 
-    #Функция детальной проверки прокси с помощью ProxyInformation и записи результата в БД
+    # Функция детальной проверки прокси с помощью ProxyInformation и записи результата в БД
     def check_proxy_with_proxyinformation(self, proxy):
         checker = ProxyInformation()
         result = checker.check_proxy(proxy)
@@ -191,14 +176,11 @@ class ProxyViewSet(viewsets.ModelViewSet):
             else:
                 print(f"Ошибка сериализатора: {serializer.errors}")
 
-    #Подсчет количества прокси и времени выполнения
+    # Подсчет количества прокси и времени выполнения
     def timer(self):
-        with self.lock:
-            # Извлечь общее количество прокси из кэша, если не установлено, рассчитать его
-            total_proxies = cache.get('total_proxies', len(set(self.proxies_list)))
-            checked_proxies_count = cache.get(self.checked_proxies_count_key)  # Get from cache
-
-        remaining_proxies = total_proxies - checked_proxies_count  # Осталось прокси для проверки
+        total_proxies = cache.get('total_proxies', len(set(self.proxies_list)))
+        checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
+        remaining_proxies = total_proxies - checked_proxies_count
 
         if total_proxies == 0 or checked_proxies_count == 0:
             return {
@@ -210,19 +192,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
             }
 
         start_time = cache.get('start_time')
-        if start_time is None:
-            start_time = time.perf_counter()  # Если время не установлено, устанавливаем его
+        if not start_time:
+            start_time = datetime.now()
             cache.set('start_time', start_time)
-            print(f"Время было не установлено  устанавливаем {start_time}")
-        else:
-            print(f"Время уже установлено: {start_time}")
 
-        elapsed_time = time.perf_counter() - start_time
-        cache.set('elapsed_time', elapsed_time)  # Обновляем время в кеше
-        print(f'Настоящее время: {time.perf_counter()}')
-        print(f'Прошедшее время: {elapsed_time}')  # Для отладки
-
-        avg_time_per_proxy = elapsed_time / checked_proxies_count if checked_proxies_count != 0 else 0
+        elapsed_time = (datetime.now() - start_time).total_seconds()
+        avg_time_per_proxy = elapsed_time / checked_proxies_count
         remaining_time = avg_time_per_proxy * remaining_proxies
 
         remaining_hours = int(remaining_time // 3600)
@@ -277,26 +252,22 @@ class ProxyViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def start_proxy_check(self, request):
         print("Запуск проверки прокси...")
-        cache.set('proxy_check_running', True)
 
-        # Получить прокси из разных источников
         self.get_data_from_geonode()
         self.get_data_from_socksus()
         self.get_data_from_txt()
+        cache.set('proxy_check_running', True)
 
-        # Кэшировать общее количество прокси после сбора прокси
         cache.set('total_proxies', len(self.proxies_list))
+        self.check_proxy_thread = Thread(target=self.check_proxy, args=("https://ipinfo.io/json",))
+        self.check_proxy_thread.start()
 
-        # Получить URL для проверки из запроса или использовать значение по умолчанию
-        url_to_check = request.data.get('url', 'https://www.google.com/')
+        # Проверка, что поток действительно работает
+        if self.check_proxy_thread.is_alive():
+            print("Proxy check thread is running.")
+        else:
+            print("Proxy check thread is not running.")
 
-        # Запустить процесс проверки прокси в отдельном потоке
-        thread = Thread(target=self.check_proxy, args=(url_to_check,), daemon=True)
-        thread.start()
-
-        # thread.join()
-
-        # Вызов метода таймера
         timer_data = self.timer()
 
         return JsonResponse({'status': 'Proxy check started', 'timer_data': timer_data})
@@ -304,10 +275,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
     # урл досрочной остановки проверки прокси
     @action(detail=False, methods=['post'])
     def stop_proxy_check(self, request):
-        print("Остановка проверки прокси...")
+        print("Stopping proxy check...")
         cache.set('proxy_check_running', False)
+
         cache.set(self.checked_proxies_count_key, 0)
-        cache.set('total_proxies', 0)  # Reset total proxies in cache
+        cache.set('total_proxies', 0)
+
         return JsonResponse({'status': 'Proxy check stopped'})
 
 
@@ -316,7 +289,7 @@ class CleanOldRecordsView(APIView):
 
     def delete(self, request, *args, **kwargs):
         try:
-            threshold_date = date.today() - timedelta(days=1)  # Данные старше 1 дня
+            threshold_date = datetime.today() - timedelta(days=1)  # Данные старше 1 дня
             old_records = CheckedProxy.objects.filter(date_checked__lt=threshold_date)
             count, _ = old_records.delete()
             return Response({"message": f"Удалено {count} старых записей."}, status=status.HTTP_200_OK)
@@ -329,10 +302,12 @@ class ProxyListView(View):
     def get(self, request, *args, **kwargs):
         return render(request, 'checker/proxy_list.html')
 
+
 # Представление для страницы "О нас"
 class AboutView(View):
     def get(self, request, *args, **kwargs):
         return render(request, 'checker/about.html')
+
 
 # Представление для страницы FAQ
 class FaqView(View):
