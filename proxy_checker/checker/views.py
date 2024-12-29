@@ -182,14 +182,14 @@ class ProxyViewSet(viewsets.ModelViewSet):
         checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
         remaining_proxies = total_proxies - checked_proxies_count
 
-        if total_proxies == 0 or checked_proxies_count == 0:
-            return {
-                'total_checked': 0,
-                'total_proxies': total_proxies,
-                'remaining_hours': 0,
-                'remaining_minutes': 0,
-                'remaining_seconds': 0
-            }
+        # if total_proxies == 0 or checked_proxies_count == 0:
+        #     return {
+        #         'total_checked': 0,
+        #         'total_proxies': total_proxies,
+        #         'remaining_hours': 0,
+        #         'remaining_minutes': 0,
+        #         'remaining_seconds': 0
+        #     }
 
         start_time = cache.get('start_time')
         if not start_time:

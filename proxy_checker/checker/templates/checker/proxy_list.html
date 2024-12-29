@@ -13,36 +13,38 @@
 
     <!-- Таблица списка прокси -->
     <h3>Проверенные Прокси</h3>
-    <table>
-        <thead>
-            <tr>
-                <th>IP</th>
-                <th>Порт</th>
-                <th>Протокол</th>
-                <th>Время ответа</th>
-                <th>Анонимность</th>
-                <th>Страна</th>
-                <th>Код страны</th>
-                <th>Дата проверки</th>
-                <th>Время проверки</th>
-            </tr>
-        </thead>
-        <tbody id="proxy-table-body">
-            {% for proxy in proxies %}
+    <div class="table-container">
+        <table id="proxy-table" class="display">
+            <thead>
                 <tr>
-                    <td>{{ proxy.ip }}</td>
-                    <td>{{ proxy.port }}</td>
-                    <td>{{ proxy.protocol }}</td>
-                    <td>{{ proxy.response_time }}</td>
-                    <td>{{ proxy.anonymity }}</td>
-                    <td>{{ proxy.country }}</td>
-                    <td>{{ proxy.country_code }}</td>
-                    <td>{{ proxy.date_checked }}</td>
-                    <td>{{ proxy.time_checked }}</td>
+                    <th>IP</th>
+                    <th>Порт</th>
+                    <th>Протокол</th>
+                    <th>Время ответа</th>
+                    <th>Анонимность</th>
+                    <th>Страна</th>
+                    <th>Код страны</th>
+                    <th>Дата проверки</th>
+                    <th>Время проверки</th>
                 </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+            </thead>
+            <tbody id="proxy-table-body">
+                {% for proxy in proxies %}
+                    <tr>
+                        <td>{{ proxy.ip }}</td>
+                        <td>{{ proxy.port }}</td>
+                        <td>{{ proxy.protocol }}</td>
+                        <td>{{ proxy.response_time }}</td>
+                        <td>{{ proxy.anonymity }}</td>
+                        <td>{{ proxy.country }}</td>
+                        <td>{{ proxy.country_code }}</td>
+                        <td>{{ proxy.date_checked }}</td>
+                        <td>{{ proxy.time_checked }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <!-- Отображение таймера -->
@@ -63,6 +65,10 @@
 {% endblock %}
 
 {% block scripts %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.4/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.4/js/jquery.dataTables.min.js"></script>
+
 <script>
     // Функция старта проверки
     function startProxyCheck() {
@@ -139,6 +145,8 @@
                     `;
                     tableBody.appendChild(row);
                 });
+
+                $('#proxy-table').DataTable();
             })
             .catch(error => console.error('Error fetching proxy data:', error));
     }
