@@ -65,10 +65,17 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Подключение стилей для DataTable -->
 <link rel="stylesheet" href="https://cdn.datatables.net/1.11.4/css/jquery.dataTables.min.css">
+
+<!-- Подключение jQuery -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<!-- Подключение основного скрипта для DataTable -->
 <script src="https://cdn.datatables.net/1.11.4/js/jquery.dataTables.min.js"></script>
 
+<!-- Подключение файла локализации DataTable на русский язык -->
+<script type="text/javascript" charset="utf-8" src="https://cdn.datatables.net/plug-ins/1.11.4/i18n/Russian.json"></script>
 <script>
     // Функция старта проверки
     function startProxyCheck() {
@@ -121,6 +128,40 @@
         })
         .catch(error => console.error('Error:', error));
     }
+
+    // Инициализация таблицы DataTable с русской локализацией
+    $(document).ready(function() {
+        $('#proxy-table').DataTable({
+            "language": {
+                "decimal": "",  // Позиция десятичного разделителя, если применяется
+                "emptyTable": "Нет данных в таблице",  // Сообщение, когда таблица пуста
+                "info": "Показано с _START_ до _END_ из _TOTAL_ записей",  // Информация о количестве записей
+                "infoEmpty": "Показано с 0 до 0 из 0 записей",  // Когда нет записей
+                "infoFiltered": "(отфильтровано из _MAX_ записей)",  // Когда применен фильтр
+                "lengthMenu": "Показать _MENU_ записей",  // Опции для отображения количества записей на странице
+                "loadingRecords": "Загрузка...",  // Сообщение при загрузке данных
+                "processing": "Обработка...",  // Сообщение при обработке данных
+                "search": "Поиск:",  // Текст в поле поиска
+                "zeroRecords": "Не найдено записей",  // Сообщение, если не найдено записей по запросу
+                "paginate": {
+                    "first": "Первая",  // Кнопка первой страницы
+                    "last": "Последняя",  // Кнопка последней страницы
+                    "next": "Следующая",  // Кнопка следующей страницы
+                    "previous": "Предыдущая"  // Кнопка предыдущей страницы
+                },
+                "aria": {
+                    "sortAscending": ": активировать для сортировки по возрастанию",  // Текст для сортировки по возрастанию
+                    "sortDescending": ": активировать для сортировки по убыванию"  // Текст для сортировки по убыванию
+                }
+            },
+            "processing": true,  // Включить обработку данных (можно настроить для более сложных операций)
+            "serverSide": false,  // Устанавливаем false для простых данных, иначе использовать для серверной обработки
+            "responsive": true,  // Включаем адаптивный режим для мобильных устройств
+            "pageLength": 10,  // Количество записей на одной странице
+            "order": [[0, 'asc']],  // Сортировка по умолчанию (по первой колонке)
+            "stateSave": true  // Сохраняем состояние таблицы между перезагрузками
+        });
+    });
 
     // Функция для получения данных о прокси
     function fetchProxyData() {
@@ -178,6 +219,10 @@
         updateTimer();
         setInterval(fetchProxyData, 5000);  // Обновление каждые 5 секунд
         setInterval(updateTimer, 1000);    // Обновление таймера каждую секунду
+    });
+
+    $(document).ready(function() {
+        $('#proxy-table').DataTable(); // Автоматически применится русская локализация
     });
 </script>
 {% endblock %}

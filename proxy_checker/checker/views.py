@@ -1,3 +1,4 @@
+from asgiref.timeout import timeout
 from django.http import JsonResponse, HttpResponse
 from django.views import View
 from rest_framework import viewsets
@@ -25,7 +26,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.proxies_list = []
-        self.start_time = datetime.now()
+        # self.start_time = datetime.now()
         self.header = {'User-Agent': UserAgent().random}
         self.txt_sources = [
             "https://spys.me/socks.txt",
@@ -40,11 +41,14 @@ class ProxyViewSet(viewsets.ModelViewSet):
         ]
         self.lock = Lock()  # Блокировка для обеспечения безопасности потока при изменении proxy_list
         self.checked_proxies_count_key = "checked_proxies_count"
+        self.start_time_key = "start_time"
         self.stop_event = Event()
 
-        # Инициализируем кэш для количества проверенных прокси
+        # Инициализируем кэш для количества проверенных прокси и времени старта
         if not cache.get(self.checked_proxies_count_key):
-            cache.set(self.checked_proxies_count_key, 0)
+            cache.set(self.checked_proxies_count_key, 0, timeout=None)
+        if not cache.get(self.start_time_key):
+            cache.set(self.start_time_key, datetime.now(), timeout=None)
 
     # Функция забора данных с geonode.com
     def get_data_from_geonode(self):
@@ -69,7 +73,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                             self.proxies_list.append(f"{ip}:{port}")
                     print(f"Страница {number_page} забрана. Всего забрано прокси: {len(self.proxies_list)}")
                     # Update the cache with the total proxies count after fetching
-                    cache.set('total_proxies', len(self.proxies_list))
+                    cache.set('total_proxies', len(self.proxies_list), timeout=None)
                 except requests.exceptions.RequestException as e:
                     print(f"Ошибка получения прокси из {page_url}: {e}")
 
@@ -91,7 +95,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                         if ip and port:
                             self.proxies_list.append(f"{ip}:{port}")
                             # Update the cache with the total proxies count after fetching
-                            cache.set('total_proxies', len(self.proxies_list))
+                            cache.set('total_proxies', len(self.proxies_list), timeout=None)
             print(f"Всего прокси из socks.us: {len(data)}")
         except requests.exceptions.RequestException as e:
             print(f"Ошибка получения прокси из  {url}: {e}")
@@ -111,7 +115,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 proxy_list_filtered = re.findall(pattern, "\n".join(proxy_list))
                 self.proxies_list.extend(proxy_list_filtered)
                 # Update the cache with the total proxies count after fetching
-                cache.set('total_proxies', len(self.proxies_list))
+                cache.set('total_proxies', len(self.proxies_list), timeout=None)
                 total_proxies += len(proxy_list_filtered)
         print(f"Всего прокси из txt_sources : {total_proxies}")
 
@@ -129,9 +133,10 @@ class ProxyViewSet(viewsets.ModelViewSet):
             #     print("Проверка прокси была остановлена.")
             #     break
 
-            checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
-            cache.set(self.checked_proxies_count_key, checked_proxies_count + 1)
-            print(f"Проверено прокси {proxy}...")
+            with self.lock:
+                checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
+                cache.set(self.checked_proxies_count_key, checked_proxies_count + 1, timeout=None)
+                print(f"Проверено прокси {proxy}...")
 
             proxy_dict = {
                 'http': f'socks5://{proxy}',
@@ -178,38 +183,34 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
     # Подсчет количества прокси и времени выполнения
     def timer(self):
-        total_proxies = cache.get('total_proxies', len(set(self.proxies_list)))
         checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
-        remaining_proxies = total_proxies - checked_proxies_count
 
-        # if total_proxies == 0 or checked_proxies_count == 0:
-        #     return {
-        #         'total_checked': 0,
-        #         'total_proxies': total_proxies,
-        #         'remaining_hours': 0,
-        #         'remaining_minutes': 0,
-        #         'remaining_seconds': 0
-        #     }
+        total_proxies = cache.get('total_proxies', 0)
 
-        start_time = cache.get('start_time')
+        start_time = cache.get(self.start_time_key)
         if not start_time:
             start_time = datetime.now()
-            cache.set('start_time', start_time)
+            cache.set(self.start_time_key, start_time, timeout=None)
 
-        elapsed_time = (datetime.now() - start_time).total_seconds()
-        avg_time_per_proxy = elapsed_time / checked_proxies_count
-        remaining_time = avg_time_per_proxy * remaining_proxies
+        elapsed_seconds = (datetime.now() - start_time).total_seconds()
 
-        remaining_hours = int(remaining_time // 3600)
-        remaining_minutes = int((remaining_time % 3600) // 60)
-        remaining_seconds = int(remaining_time % 60)
+        if checked_proxies_count > 0:
+            average_time_per_proxy = elapsed_seconds / checked_proxies_count
+            remaining_proxies = total_proxies - checked_proxies_count
+            remaining_time_seconds = average_time_per_proxy * remaining_proxies
+
+            remaining_time = timedelta(seconds=remaining_time_seconds)
+            hours, remainder = divmod(remaining_time.seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+        else:
+            hours = minutes = seconds = 0
 
         return {
-            'total_checked': checked_proxies_count,
-            'total_proxies': total_proxies,
-            'remaining_hours': remaining_hours,
-            'remaining_minutes': remaining_minutes,
-            'remaining_seconds': remaining_seconds
+            "total_checked": checked_proxies_count,
+            "total_proxies": total_proxies,
+            "remaining_hours": int(hours),
+            "remaining_minutes": int(minutes),
+            "remaining_seconds": int(seconds)
         }
 
     # урл для таймера
@@ -256,9 +257,13 @@ class ProxyViewSet(viewsets.ModelViewSet):
         self.get_data_from_geonode()
         self.get_data_from_socksus()
         self.get_data_from_txt()
-        cache.set('proxy_check_running', True)
+        cache.set('proxy_check_running', True, timeout=None)
 
-        cache.set('total_proxies', len(self.proxies_list))
+        # Только устанавливаем время старта, если оно не было установлено
+        if not cache.get(self.start_time_key):
+            cache.set(self.start_time_key, datetime.now(), timeout=None)
+
+        cache.set('total_proxies', len(self.proxies_list), timeout=None)
         self.check_proxy_thread = Thread(target=self.check_proxy, args=("https://ipinfo.io/json",))
         self.check_proxy_thread.start()
 
@@ -268,9 +273,9 @@ class ProxyViewSet(viewsets.ModelViewSet):
         else:
             print("Proxy check thread is not running.")
 
-        timer_data = self.timer()
+        # timer_data = self.timer()
 
-        return JsonResponse({'status': 'Proxy check started', 'timer_data': timer_data})
+        return JsonResponse({'status': 'Proxy check started'})
 
     # урл досрочной остановки проверки прокси
     @action(detail=False, methods=['post'])
@@ -280,6 +285,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
         cache.set(self.checked_proxies_count_key, 0)
         cache.set('total_proxies', 0)
+        cache.delete(self.start_time_key)
 
         return JsonResponse({'status': 'Proxy check stopped'})
 

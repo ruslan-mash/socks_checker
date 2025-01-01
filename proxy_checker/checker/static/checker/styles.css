@@ -107,6 +107,6 @@ footer {
 }
 
 .table-container {
-    max-height: 800px; /* Adjust as needed */
+    max-height: 1000px; /* Adjust as needed */
     overflow-y: auto;
 }
