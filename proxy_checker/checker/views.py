@@ -17,11 +17,19 @@ from django.core.cache import cache
 from threading import Thread, Lock, Event
 from .serializers import CheckedProxySerializer
 from .models import CheckedProxy
+from rest_framework.pagination import PageNumberPagination
+
+
+class CheckedProxyPagination(PageNumberPagination):
+    page_size = 8
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class ProxyViewSet(viewsets.ModelViewSet):
     queryset = CheckedProxy.objects.all()
     serializer_class = CheckedProxySerializer
+    pagination_class = CheckedProxyPagination
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -136,7 +144,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
             with self.lock:
                 checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
                 cache.set(self.checked_proxies_count_key, checked_proxies_count + 1, timeout=None)
-                print(f"Проверено прокси {proxy}...")
+                print(f"Проверяется прокси {proxy}...")
 
             proxy_dict = {
                 'http': f'socks5://{proxy}',
@@ -264,7 +272,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
             cache.set(self.start_time_key, datetime.now(), timeout=None)
 
         cache.set('total_proxies', len(self.proxies_list), timeout=None)
-        self.check_proxy_thread = Thread(target=self.check_proxy, args=("https://ipinfo.io/json",))
+        self.check_proxy_thread = Thread(target=self.check_proxy, args=("https://google.com",))
         self.check_proxy_thread.start()
 
         # Проверка, что поток действительно работает
@@ -288,6 +296,38 @@ class ProxyViewSet(viewsets.ModelViewSet):
         cache.delete(self.start_time_key)
 
         return JsonResponse({'status': 'Proxy check stopped'})
+
+    def list(self, request, *args, **kwargs):
+        # Get the 'draw' parameter safely, default to 1 if it's invalid or undefined
+        try:
+            draw = int(request.GET.get("draw", 1))
+        except ValueError:
+            draw = 1  # Default to 1 if the value is 'undefined' or invalid
+
+        # Filter and paginate the queryset with explicit ordering
+        queryset = self.filter_queryset(self.get_queryset()).order_by('id')  # Ensure ordered by 'id' or another field
+
+        # Pagination logic
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "draw": draw,
+                "recordsTotal": self.queryset.count(),  # Total records in the database
+                "recordsFiltered": self.queryset.count(),  # Adjust if filtering is applied
+                "data": serializer.data,  # Ensure the proxies are under the 'data' key
+
+            })
+
+        # If pagination is not applied, return all records (not paginated)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "draw": draw,
+            "recordsTotal": self.queryset.count(),
+            "recordsFiltered": self.queryset.count(),  # Adjust if filtering is applied
+            "data": serializer.data,  # Ensure 'data' is returned
+
+        })
 
 
 # удаление из БД записей старше 24 часов (бесполезны)

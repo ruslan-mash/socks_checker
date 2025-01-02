@@ -107,6 +107,6 @@ footer {
 }
 
 .table-container {
-    max-height: 1000px; /* Adjust as needed */
-    overflow-y: auto;
+    overflow: visible;  /* Убираем ограничение прокрутки */
+    max-height: none;   /* Снимаем ограничение высоты */
 }

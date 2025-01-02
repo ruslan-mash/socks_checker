@@ -28,21 +28,7 @@
                     <th>Время проверки</th>
                 </tr>
             </thead>
-            <tbody id="proxy-table-body">
-                {% for proxy in proxies %}
-                    <tr>
-                        <td>{{ proxy.ip }}</td>
-                        <td>{{ proxy.port }}</td>
-                        <td>{{ proxy.protocol }}</td>
-                        <td>{{ proxy.response_time }}</td>
-                        <td>{{ proxy.anonymity }}</td>
-                        <td>{{ proxy.country }}</td>
-                        <td>{{ proxy.country_code }}</td>
-                        <td>{{ proxy.date_checked }}</td>
-                        <td>{{ proxy.time_checked }}</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
+            <tbody></tbody>
         </table>
     </div>
 </div>
@@ -53,144 +39,130 @@
 </div>
 
 <div>
-    <p>Список проверенных прокси в формате txt можно получить по ссылке
-        <a href="{% url 'generate_txt_list' %}">ссылке</a>
-    </p>
+    <p>Список проверенных прокси в формате txt можно получить по <a href="{% url 'generate_txt_list' %}">ссылке</a></p>
 </div>
 <div>
-    <p>Список проверенных прокси в формате json можно получить по ссылке
-        <a href="{% url 'generate_json_list' %}">ссылке</a>
-    </p>
+    <p>Список проверенных прокси в формате json можно получить по <a href="{% url 'generate_json_list' %}">ссылке</a></p>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<!-- Подключение стилей для DataTable -->
+<!-- Подключение стилей и скриптов для DataTable -->
 <link rel="stylesheet" href="https://cdn.datatables.net/1.11.4/css/jquery.dataTables.min.css">
-
-<!-- Подключение jQuery -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-
-<!-- Подключение основного скрипта для DataTable -->
 <script src="https://cdn.datatables.net/1.11.4/js/jquery.dataTables.min.js"></script>
 
-<!-- Подключение файла локализации DataTable на русский язык -->
-<script type="text/javascript" charset="utf-8" src="https://cdn.datatables.net/plug-ins/1.11.4/i18n/Russian.json"></script>
 <script>
-    // Функция старта проверки
+    // Функция запуска проверки прокси
     function startProxyCheck() {
         fetch('/start-proxy-check/', {
             method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-            },
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' },
         })
         .then(response => response.json())
         .then(data => {
-            console.log('Proxy check started', data);
-            fetchProxyData();
+            console.log('Проверка началась:', data);
+            $('#proxy-table').DataTable().ajax.reload();
             updateTimer();
-            document.querySelector('.start').disabled = true;  // Disable the start button
-            document.querySelector('.stop').disabled = false;  // Enable the stop button
+            document.querySelector('.start').disabled = true;
+            document.querySelector('.stop').disabled = false;
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => console.error('Ошибка:', error));
     }
 
-    // Функция остановки проверки
+    // Функция остановки проверки прокси
     function stopProxyCheck() {
         fetch('/stop-proxy-check/', {
             method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-            },
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' },
         })
         .then(response => response.json())
         .then(data => {
-            console.log('Proxy check stopped', data);
-            document.querySelector('.start').disabled = false;  // Enable the start button
-            document.querySelector('.stop').disabled = true;  // Disable the stop button
+            console.log('Проверка остановлена:', data);
+            document.querySelector('.start').disabled = false;
+            document.querySelector('.stop').disabled = true;
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => console.error('Ошибка:', error));
     }
 
-    // Функция для очистки старых записей
+    // Функция очистки старых записей
     function cleanOldRecords() {
         fetch('/clean-old-records/', {
             method: 'DELETE',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-            },
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' },
         })
         .then(response => response.json())
         .then(data => {
             alert(data.message);
-            fetchProxyData();  // Обновить данные после очистки
+            $('#proxy-table').DataTable().ajax.reload();
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => console.error('Ошибка:', error));
     }
 
-    // Инициализация таблицы DataTable с русской локализацией
+        // Инициализация DataTable
     $(document).ready(function() {
-        $('#proxy-table').DataTable({
-            "language": {
-                "decimal": "",  // Позиция десятичного разделителя, если применяется
-                "emptyTable": "Нет данных в таблице",  // Сообщение, когда таблица пуста
-                "info": "Показано с _START_ до _END_ из _TOTAL_ записей",  // Информация о количестве записей
-                "infoEmpty": "Показано с 0 до 0 из 0 записей",  // Когда нет записей
-                "infoFiltered": "(отфильтровано из _MAX_ записей)",  // Когда применен фильтр
-                "lengthMenu": "Показать _MENU_ записей",  // Опции для отображения количества записей на странице
-                "loadingRecords": "Загрузка...",  // Сообщение при загрузке данных
-                "processing": "Обработка...",  // Сообщение при обработке данных
-                "search": "Поиск:",  // Текст в поле поиска
-                "zeroRecords": "Не найдено записей",  // Сообщение, если не найдено записей по запросу
-                "paginate": {
-                    "first": "Первая",  // Кнопка первой страницы
-                    "last": "Последняя",  // Кнопка последней страницы
-                    "next": "Следующая",  // Кнопка следующей страницы
-                    "previous": "Предыдущая"  // Кнопка предыдущей страницы
-                },
-                "aria": {
-                    "sortAscending": ": активировать для сортировки по возрастанию",  // Текст для сортировки по возрастанию
-                    "sortDescending": ": активировать для сортировки по убыванию"  // Текст для сортировки по убыванию
-                }
-            },
-            "processing": true,  // Включить обработку данных (можно настроить для более сложных операций)
-            "serverSide": false,  // Устанавливаем false для простых данных, иначе использовать для серверной обработки
-            "responsive": true,  // Включаем адаптивный режим для мобильных устройств
-            "pageLength": 10,  // Количество записей на одной странице
-            "order": [[0, 'asc']],  // Сортировка по умолчанию (по первой колонке)
-            "stateSave": true  // Сохраняем состояние таблицы между перезагрузками
-        });
+    const table = $('#proxy-table').DataTable({
+        "processing": true,
+        "serverSide": true,
+        "ajax": {
+            "url": "/proxies/", // URL для получения данных
+            "type": "GET",
+            "dataSrc": function(json) {
+                console.log(json);  // Просмотр ответа от сервера в консоли
+
+                // Преобразуем данные в формат, который ожидает DataTable
+                return json.results ? json.results.data : [];
+            }
+        },
+        "columns": [
+            { "data": "ip" },
+            { "data": "port" },
+            { "data": "protocol" },
+            { "data": "response_time" },
+            { "data": "anonymity" },
+            { "data": "country" },
+            { "data": "country_code" },
+            { "data": "date_checked" },
+            { "data": "time_checked" }
+        ],
+        "language": {
+            "decimal": "",
+            "emptyTable": "Нет данных",
+            "info": "Показано с _START_ до _END_ из _TOTAL_ записей",
+            "infoEmpty": "Показано с 0 до 0 из 0 записей",
+            "infoFiltered": "(отфильтровано из _MAX_ записей)",
+            "lengthMenu": "",
+            "loadingRecords": "Загрузка...",
+            "paginate": {
+                "first": "Первая",
+                "last": "Последняя",
+                "next": "Следующая",
+                "previous": "Предыдущая"
+            }
+        },
+        "paging": true,
+        "pageLength": 8,
+        "stateSave": true,
+        "ordering": true, // Включить сортировку
+        "searching": false,
+        "pagingType": "simple",  // Используем простой тип пагинации
+        "drawCallback": function(settings) {
+            // Получаем данные о количестве записей
+            const totalRecords = settings.json.count && !isNaN(settings.json.count) ? settings.json.count : 0;  // Используем count из ответа сервера или 0, если count не является числом
+            const filteredRecords = settings.json.count && !isNaN(settings.json.count) ? settings.json.count : 0;  // Используем count из ответа сервера или 0, если count не является числом
+            const pageLength = settings._iDisplayLength;
+            const totalPages = Math.ceil(totalRecords / pageLength);  // Всего страниц
+            const startRecord = settings._iDisplayStart + 1; // Первая отображаемая запись
+            const endRecord = Math.min(settings._iDisplayStart + settings._iDisplayLength, totalRecords); // Корректируем для последней записи, учитывая количество записей на странице
+
+            // Обновляем информацию о количестве записей
+            $('#proxy-table_info').text(`Показано с ${startRecord} до ${endRecord} из ${totalRecords} записей. Всего страниц: ${totalPages}`);
+        }
+
     });
 
-    // Функция для получения данных о прокси
-    function fetchProxyData() {
-        fetch('/proxies/')
-            .then(response => response.json())
-            .then(data => {
-                const tableBody = document.getElementById('proxy-table-body');
-                tableBody.innerHTML = '';
-
-                data.forEach(proxy => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${proxy.ip}</td>
-                        <td>${proxy.port}</td>
-                        <td>${proxy.protocol}</td>
-                        <td>${proxy.response_time}</td>
-                        <td>${proxy.anonymity}</td>
-                        <td>${proxy.country}</td>
-                        <td>${proxy.country_code}</td>
-                        <td>${proxy.date_checked}</td>
-                        <td>${proxy.time_checked}</td>
-                    `;
-                    tableBody.appendChild(row);
-                });
-
-                $('#proxy-table').DataTable();
-            })
-            .catch(error => console.error('Error fetching proxy data:', error));
-    }
+    updateTimer();  // Ensure the timer updates on page load
+});
 
     // Функция обновления таймера
     function updateTimer() {
@@ -198,31 +170,13 @@
             .then(response => response.json())
             .then(data => {
                 const timerDiv = document.getElementById('timer');
-                if (data.total_proxies > 0) {
-                    timerDiv.innerHTML = `
-                        <p>Всего проверено ${data.total_checked} из ${data.total_proxies} прокси.
-                        Примерное время до окончания проверки: ${data.remaining_hours} часов
-                        ${data.remaining_minutes} минут ${data.remaining_seconds} секунд.</p>
-                    `;
-                } else {
-                    timerDiv.innerHTML = `
-                        <p>Всего проверено 0 из 0 прокси. Примерное время до окончания проверки: 0 часов 0 минут 0 секунд.</p>
-                    `;
-                }
+                timerDiv.innerHTML = `
+                    <p>Всего проверено ${data.total_checked} из ${data.total_proxies} прокси.
+                    Примерное время до окончания проверки: ${data.remaining_hours} часов
+                    ${data.remaining_minutes} минут ${data.remaining_seconds} секунд.</p>
+                `;
             })
-            .catch(error => console.error('Error fetching timer data:', error));
+            .catch(error => console.error('Ошибка обновления таймера:', error));
     }
-
-    // Автоматическое обновление данных при загрузке страницы
-    document.addEventListener('DOMContentLoaded', () => {
-        fetchProxyData();
-        updateTimer();
-        setInterval(fetchProxyData, 5000);  // Обновление каждые 5 секунд
-        setInterval(updateTimer, 1000);    // Обновление таймера каждую секунду
-    });
-
-    $(document).ready(function() {
-        $('#proxy-table').DataTable(); // Автоматически применится русская локализация
-    });
 </script>
 {% endblock %}
