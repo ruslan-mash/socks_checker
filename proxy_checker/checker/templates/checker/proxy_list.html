@@ -199,5 +199,21 @@
         // Инициализация
         loadData(currentPage);
 
+
+        // автоматическое обновление на странице
+        document.addEventListener('DOMContentLoaded', () => {
+        // Загружаем данные на текущую страницу
+        loadData(currentPage);
+        updateTimer();
+
+        // Устанавливаем интервалы обновления данных и таймера
+        setInterval(() => {
+            loadData(currentPage); // Обновление данных каждые 5 секунд
+        }, 5000);
+
+        setInterval(updateTimer, 1000); // Обновление таймера каждую секунду
+    });
+
+
 </script>
 {% endblock %}
