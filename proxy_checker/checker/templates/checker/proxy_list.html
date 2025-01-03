@@ -28,9 +28,18 @@
                     <th>Время проверки</th>
                 </tr>
             </thead>
-            <tbody></tbody>
+            <tbody id="tableBody"></tbody>
         </table>
     </div>
+    <!-- Информация о пагинации -->
+        <div id="table-info">
+            <p>Показано с 0 до 0 из 0 записей. Всего страниц: 0.</p>
+        </div>
+    <!-- Кнопки для управления пагинацией -->
+        <div class="pagination-controls">
+            <button id="prevPageButton">Предыдущая страница</button>
+            <button id="nextPageButton">Следующая страница</button>
+        </div>
 </div>
 
 <!-- Отображение таймера -->
@@ -47,11 +56,6 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- Подключение стилей и скриптов для DataTable -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.11.4/css/jquery.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.11.4/js/jquery.dataTables.min.js"></script>
-
 <script>
     // Функция запуска проверки прокси
     function startProxyCheck() {
@@ -99,70 +103,6 @@
         .catch(error => console.error('Ошибка:', error));
     }
 
-        // Инициализация DataTable
-    $(document).ready(function() {
-    const table = $('#proxy-table').DataTable({
-        "processing": true,
-        "serverSide": true,
-        "ajax": {
-            "url": "/proxies/", // URL для получения данных
-            "type": "GET",
-            "dataSrc": function(json) {
-                console.log(json);  // Просмотр ответа от сервера в консоли
-
-                // Преобразуем данные в формат, который ожидает DataTable
-                return json.results ? json.results.data : [];
-            }
-        },
-        "columns": [
-            { "data": "ip" },
-            { "data": "port" },
-            { "data": "protocol" },
-            { "data": "response_time" },
-            { "data": "anonymity" },
-            { "data": "country" },
-            { "data": "country_code" },
-            { "data": "date_checked" },
-            { "data": "time_checked" }
-        ],
-        "language": {
-            "decimal": "",
-            "emptyTable": "Нет данных",
-            "info": "Показано с _START_ до _END_ из _TOTAL_ записей",
-            "infoEmpty": "Показано с 0 до 0 из 0 записей",
-            "infoFiltered": "(отфильтровано из _MAX_ записей)",
-            "lengthMenu": "",
-            "loadingRecords": "Загрузка...",
-            "paginate": {
-                "first": "Первая",
-                "last": "Последняя",
-                "next": "Следующая",
-                "previous": "Предыдущая"
-            }
-        },
-        "paging": true,
-        "pageLength": 8,
-        "stateSave": true,
-        "ordering": true, // Включить сортировку
-        "searching": false,
-        "pagingType": "simple",  // Используем простой тип пагинации
-        "drawCallback": function(settings) {
-            // Получаем данные о количестве записей
-            const totalRecords = settings.json.count && !isNaN(settings.json.count) ? settings.json.count : 0;  // Используем count из ответа сервера или 0, если count не является числом
-            const filteredRecords = settings.json.count && !isNaN(settings.json.count) ? settings.json.count : 0;  // Используем count из ответа сервера или 0, если count не является числом
-            const pageLength = settings._iDisplayLength;
-            const totalPages = Math.ceil(totalRecords / pageLength);  // Всего страниц
-            const startRecord = settings._iDisplayStart + 1; // Первая отображаемая запись
-            const endRecord = Math.min(settings._iDisplayStart + settings._iDisplayLength, totalRecords); // Корректируем для последней записи, учитывая количество записей на странице
-
-            // Обновляем информацию о количестве записей
-            $('#proxy-table_info').text(`Показано с ${startRecord} до ${endRecord} из ${totalRecords} записей. Всего страниц: ${totalPages}`);
-        }
-
-    });
-
-    updateTimer();  // Ensure the timer updates on page load
-});
 
     // Функция обновления таймера
     function updateTimer() {
@@ -178,5 +118,86 @@
             })
             .catch(error => console.error('Ошибка обновления таймера:', error));
     }
+
+    // Функция работы с пагинацией
+        let currentPage = 1; // Текущая страница
+        const pageSize = 8; // Количество записей на странице
+        let totalRecords = 0; // Общее количество записей
+        let totalPages = 0; // Общее количество страниц
+        const tableBody = document.getElementById("tableBody");
+        const prevPageButton = document.getElementById("prevPageButton");
+        const nextPageButton = document.getElementById("nextPageButton");
+        const tableInfo = document.getElementById("table-info");
+
+
+        // Функция для загрузки данных с сервера
+        async function loadData(page) {
+            try {
+                const response = await fetch(`http://127.0.0.1:8000/proxies/?page=${page}`);
+                const data = await response.json();
+
+                // Обновляем количество записей и страниц
+                totalRecords = data.count;
+                totalPages = Math.ceil(totalRecords / pageSize);
+
+                // Обновляем таблицу данными
+                updateTable(data.results.data);
+
+                // Обновляем информацию о пагинации
+                const startRecord = (page - 1) * pageSize + 1;
+                const endRecord = Math.min(page * pageSize, totalRecords);
+                tableInfo.innerHTML = `
+                <p>Показано с ${startRecord} до ${endRecord} из ${totalRecords} записей. Всего страниц: ${totalPages}.</p>
+                `;
+
+
+
+            // Управляем состоянием кнопок пагинации
+                prevPageButton.disabled = currentPage === 1;
+                nextPageButton.disabled = currentPage === totalPages;
+            } catch (error) {
+                console.error("Ошибка при загрузке данных:", error);
+                }
+            }
+
+        // Функция для обновления таблицы
+        function updateTable(data) {
+            // Очищаем текущие данные таблицы
+            tableBody.innerHTML = "";
+
+            // Добавляем новые строки
+            data.forEach(item => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${item.ip}</td>
+                    <td>${item.port}</td>
+                    <td>${item.protocol}</td>
+                    <td>${item.response_time}</td>
+                    <td>${item.anonymity}</td>
+                    <td>${item.country}</td>
+                    <td>${item.country_code}</td>
+                    <td>${item.date_checked}</td>
+                    <td>${item.time_checked}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Обработчики кнопок
+        prevPageButton.addEventListener("click", () => {
+            if (currentPage > 1) {
+                currentPage -= 1;
+                loadData(currentPage);
+            }
+        });
+
+        nextPageButton.addEventListener("click", () => {
+            currentPage += 1;
+            loadData(currentPage);
+        });
+
+        // Инициализация
+        loadData(currentPage);
+
 </script>
 {% endblock %}
