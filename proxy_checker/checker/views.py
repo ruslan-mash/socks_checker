@@ -20,8 +20,9 @@ from .models import CheckedProxy
 from rest_framework.pagination import PageNumberPagination
 
 
+# класс разбиения на страницы
 class CheckedProxyPagination(PageNumberPagination):
-    page_size = 8
+    page_size = 8  # на 8 страниц
     page_size_query_param = 'page_size'
     max_page_size = 100
 
@@ -34,8 +35,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.proxies_list = []
-        # self.start_time = datetime.now()
-        self.header = {'User-Agent': UserAgent().random}
+        self.header = {'User-Agent': UserAgent().random}  # разный UserAgent для каждого запроса
         self.txt_sources = [
             "https://spys.me/socks.txt",
             "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
@@ -50,7 +50,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         self.lock = Lock()  # Блокировка для обеспечения безопасности потока при изменении proxy_list
         self.checked_proxies_count_key = "checked_proxies_count"
         self.start_time_key = "start_time"
-        self.stop_event = Event()
+        # self.stop_event = Event() # событие остановки проверки
 
         # Инициализируем кэш для количества проверенных прокси и времени старта
         if not cache.get(self.checked_proxies_count_key):
@@ -63,7 +63,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         base_url = "https://proxylist.geonode.com/api/proxy-list?protocols=socks5&limit=500"
         try:
             response = requests.get(f"{base_url}&page=1&sort_by=lastChecked&sort_type=desc", headers=self.header)
-            response.raise_for_status()
+            response.raise_for_status()  # автоматически генерировать исключение (requests.exceptions.HTTPError), если HTTP-запрос завершился с ошибкой
             total = response.json().get('total', 0)
             print(f"Всего прокси с geonode.com : {total}")
 
@@ -80,7 +80,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                         if ip and port:
                             self.proxies_list.append(f"{ip}:{port}")
                     print(f"Страница {number_page} забрана. Всего забрано прокси: {len(self.proxies_list)}")
-                    # Update the cache with the total proxies count after fetching
+                    # обновление кэш с общим количеством прокси после загрузки.
                     cache.set('total_proxies', len(self.proxies_list), timeout=None)
                 except requests.exceptions.RequestException as e:
                     print(f"Ошибка получения прокси из {page_url}: {e}")
@@ -102,7 +102,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                         port = entry.get('port')
                         if ip and port:
                             self.proxies_list.append(f"{ip}:{port}")
-                            # Update the cache with the total proxies count after fetching
+                            # обновление кэш с общим количеством прокси после загрузки.
                             cache.set('total_proxies', len(self.proxies_list), timeout=None)
             print(f"Всего прокси из socks.us: {len(data)}")
         except requests.exceptions.RequestException as e:
@@ -110,7 +110,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
     # Функция забора прокси из списков с github
     def get_data_from_txt(self):
-        pattern = r'(\d+\.\d+\.\d+\.\d+:\d+)'
+        pattern = r'(\d+\.\d+\.\d+\.\d+:\d+)'  # паттерн забора информации из текстового файла ip:port
         total_proxies = 0
         for url in self.txt_sources:
             try:
@@ -122,12 +122,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 proxy_list = response.text.splitlines()
                 proxy_list_filtered = re.findall(pattern, "\n".join(proxy_list))
                 self.proxies_list.extend(proxy_list_filtered)
-                # Update the cache with the total proxies count after fetching
+                # обновление кэш с общим количеством прокси после загрузки.
                 cache.set('total_proxies', len(self.proxies_list), timeout=None)
                 total_proxies += len(proxy_list_filtered)
         print(f"Всего прокси из txt_sources : {total_proxies}")
 
-    # Функция предварительной проверки прокси на ответ с передачей на дентальную проверку
+    # Функция предварительной проверки прокси на ответ с передачей на детальную проверку
     def check_proxy(self, url, timeout=5, max_retries=3):
         print("Запуск цикла проверки прокси...")
         proxies_to_check = set(self.proxies_list)
@@ -137,9 +137,6 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 if not cache.get('proxy_check_running', True):
                     print("Остановка проверки прокси по флагу проверки")
                     break
-            # if self.stop_event.is_set():
-            #     print("Проверка прокси была остановлена.")
-            #     break
 
             with self.lock:
                 checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
@@ -154,12 +151,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
             for _ in range(max_retries):
                 try:
                     response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout)
-                    print(f"Proxy {proxy} check - Response: {response.status_code}")
+                    print(f"Прокси {proxy} проверено - Ответ: {response.status_code}")
                     if response.ok:
                         self.check_proxy_with_proxyinformation(proxy)
                         break
                 except requests.exceptions.RequestException as e:
-                    print(f"Error checking proxy {proxy}: {e}")
+                    print(f"Ошибка проверки прокси {proxy}: {e}")
 
     # Функция детальной проверки прокси с помощью ProxyInformation и записи результата в БД
     def check_proxy_with_proxyinformation(self, proxy):
@@ -167,10 +164,10 @@ class ProxyViewSet(viewsets.ModelViewSet):
         result = checker.check_proxy(proxy)
         if result.get("status") == True:
             info = result.get("info", {})
-            date = datetime.today().date()
+            date = datetime.today().strftime('%d-%m-%Y')
             time = datetime.today().strftime('%H:%M:%S')
-            # форматирование response_time до 2 знаков после запятой
-            response_time = round(info.get('responseTime', 0), 2)
+            # форматирование response_time до 3 знаков после запятой
+            response_time = round(info.get('responseTime', 0), 3)
             # Сохраняем результат в базу данных через сериализатор
             proxy_data = {
                 'ip': info.get('ip'),
@@ -192,9 +189,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
     # Подсчет количества прокси и времени выполнения
     def timer(self):
         checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
-
         total_proxies = cache.get('total_proxies', 0)
-
         start_time = cache.get(self.start_time_key)
         if not start_time:
             start_time = datetime.now()
@@ -272,23 +267,22 @@ class ProxyViewSet(viewsets.ModelViewSet):
             cache.set(self.start_time_key, datetime.now(), timeout=None)
 
         cache.set('total_proxies', len(self.proxies_list), timeout=None)
+        # запуск потока проверки прокси
         self.check_proxy_thread = Thread(target=self.check_proxy, args=("https://google.com",))
         self.check_proxy_thread.start()
 
         # Проверка, что поток действительно работает
         if self.check_proxy_thread.is_alive():
-            print("Proxy check thread is running.")
+            print("Поток проверки работает.")
         else:
-            print("Proxy check thread is not running.")
-
-        # timer_data = self.timer()
+            print("Поток проверки не работает.")
 
         return JsonResponse({'status': 'Proxy check started'})
 
     # урл досрочной остановки проверки прокси
     @action(detail=False, methods=['post'])
     def stop_proxy_check(self, request):
-        print("Stopping proxy check...")
+        print("Остановка проверки прокси...")
         cache.set('proxy_check_running', False)
 
         cache.set(self.checked_proxies_count_key, 0)
@@ -297,35 +291,36 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
         return JsonResponse({'status': 'Proxy check stopped'})
 
+    # вызов таблицы прокси постранично
     def list(self, request, *args, **kwargs):
-        # Get the 'draw' parameter safely, default to 1 if it's invalid or undefined
+        # Безопасное получение параметра «draw», значение по умолчанию 1, если он недействителен или не определен
+        # «draw», recordsTotal, recordsFiltered , раньше нужен был для TableData фронта, потом переделал, но
         try:
             draw = int(request.GET.get("draw", 1))
         except ValueError:
-            draw = 1  # Default to 1 if the value is 'undefined' or invalid
+            draw = 1  # По умолчанию 1, если значение «не определено» или недействительно.
 
-        # Filter and paginate the queryset with explicit ordering
-        queryset = self.filter_queryset(self.get_queryset()).order_by('id')  # Ensure ordered by 'id' or another field
+        # Фильтрация и разбиение на страницы набора запросов с явным упорядочиванием
+        queryset = self.filter_queryset(self.get_queryset()).order_by('id')  # Убедиться, что сортировка выполнена по «id» или другому полю
 
-        # Pagination logic
+        # логика пагинации
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response({
                 "draw": draw,
-                "recordsTotal": self.queryset.count(),  # Total records in the database
-                "recordsFiltered": self.queryset.count(),  # Adjust if filtering is applied
-                "data": serializer.data,  # Ensure the proxies are under the 'data' key
-
+                "recordsTotal": self.queryset.count(),  # Всего записей в базе данных
+                "recordsFiltered": self.queryset.count(),  # отрегулировать, если применяется фильтрация
+                "data": serializer.data,
             })
 
-        # If pagination is not applied, return all records (not paginated)
+        # Если пагинация не применяется, вернуть все записи (не разбитые на страницы)
         serializer = self.get_serializer(queryset, many=True)
         return Response({
             "draw": draw,
             "recordsTotal": self.queryset.count(),
-            "recordsFiltered": self.queryset.count(),  # Adjust if filtering is applied
-            "data": serializer.data,  # Ensure 'data' is returned
+            "recordsFiltered": self.queryset.count(),  # отрегулировать, если применяется фильтрация
+            "data": serializer.data,
 
         })
 
