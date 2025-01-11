@@ -4,21 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {% load static %}
-    <title>Socks Checker</title>
+    <title>FjordProxy</title>
 
     <link rel="stylesheet" href="{% static 'checker/styles.css' %}">
 </head>
 <body>
 
     <header>
-        <h1>Socks Checker</h1>
+        <h1>FjordProxy</h1>
     </header>
 
     <nav>
-        <a href="{% url 'proxy_list' %}">Проверка</a>
+        <a href="{% url 'home' %}">Проверка</a>
         <a href="{% url 'about' %}">Описание</a>
         <a href="{% url 'faq' %}">FAQ</a>
-        <a href="{% url 'register' %}">Регистрация</a>
 
 
     </nav>
@@ -28,7 +27,7 @@
     {% endblock %}
 
     <footer>
-        <p>&copy; 2025 Socks Checker. Mashn_hu58. ITstep.by.</p>
+        <p>&copy; 2025 FjordProxy. Ruslan M. PH1824.</p>
     </footer>
 
     <!-- Сюда будет блок со скриптами -->

@@ -1,4 +1,3 @@
-from asgiref.timeout import timeout
 from django.http import JsonResponse, HttpResponse
 from django.views import View
 from rest_framework import viewsets
@@ -6,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-
+import cloudscraper
 import requests
 import re
 from datetime import datetime, timedelta
@@ -14,10 +13,11 @@ from fake_useragent import UserAgent
 from proxy_information import ProxyInformation
 from django.shortcuts import render
 from django.core.cache import cache
-from threading import Thread, Lock, Event
+from threading import Thread, Lock
 from .serializers import CheckedProxySerializer
 from .models import CheckedProxy
 from rest_framework.pagination import PageNumberPagination
+
 
 
 # класс разбиения на страницы
@@ -61,30 +61,42 @@ class ProxyViewSet(viewsets.ModelViewSet):
     # Функция забора данных с geonode.com
     def get_data_from_geonode(self):
         base_url = "https://proxylist.geonode.com/api/proxy-list?protocols=socks5&limit=500"
+        scraper = cloudscraper.create_scraper()
+        max_retries = 3
+
+        def fetch_page(page_url, retries=max_retries):
+            for attempt in range(retries):
+                try:
+                    response = scraper.get(page_url, timeout=10)
+                    response.raise_for_status()
+                    return response.json().get('data', [])
+                except requests.exceptions.RequestException as e:
+                    print(f"Попытка {attempt + 1} для {page_url} завершилась с ошибкой: {e}")
+                    if attempt == retries - 1:
+                        print(f"Не удалось получить данные с {page_url} после {retries} попыток.")
+                        return []
+
         try:
-            response = requests.get(f"{base_url}&page=1&sort_by=lastChecked&sort_type=desc", headers=self.header)
-            response.raise_for_status()  # автоматически генерировать исключение (requests.exceptions.HTTPError), если HTTP-запрос завершился с ошибкой
-            total = response.json().get('total', 0)
-            print(f"Всего прокси с geonode.com : {total}")
+            first_page_url = f"{base_url}&page=1&sort_by=lastChecked&sort_type=desc"
+            data = fetch_page(first_page_url)
+            total = len(data)
+            print(f"Всего прокси с первой страницы geonode.com: {total}")
+
+            if data:
+                self.proxies_list.extend([f"{entry.get('ip')}:{entry.get('port')}" for entry in data if
+                                          entry.get('ip') and entry.get('port')])
 
             total_pages = (total // 500) + 1
-            for number_page in range(1, total_pages + 1):
+            for number_page in range(2, total_pages + 1):
                 page_url = f"{base_url}&page={number_page}&sort_by=lastChecked&sort_type=desc"
-                try:
-                    response = requests.get(page_url, headers=self.header)
-                    response.raise_for_status()
-                    data = response.json().get('data', [])
-                    for entry in data:
-                        ip = entry.get('ip')
-                        port = entry.get('port')
-                        if ip and port:
-                            self.proxies_list.append(f"{ip}:{port}")
-                    print(f"Страница {number_page} забрана. Всего забрано прокси: {len(self.proxies_list)}")
-                    # обновление кэш с общим количеством прокси после загрузки.
-                    cache.set('total_proxies', len(self.proxies_list), timeout=None)
-                except requests.exceptions.RequestException as e:
-                    print(f"Ошибка получения прокси из {page_url}: {e}")
-
+                data = fetch_page(page_url)
+                for entry in data:
+                    ip = entry.get('ip')
+                    port = entry.get('port')
+                    if ip and port:
+                        self.proxies_list.append(f"{ip}:{port}")
+                print(f"Страница {number_page} забрана. Всего забрано прокси: {len(self.proxies_list)}")
+                cache.set('total_proxies', len(self.proxies_list), timeout=None)
         except requests.exceptions.RequestException as e:
             print(f"Ошибка получения информации из {base_url}: {e}")
 
@@ -150,7 +162,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
             for _ in range(max_retries):
                 try:
-                    response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout)
+                    response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout, verify=False)
                     print(f"Прокси {proxy} проверено - Ответ: {response.status_code}")
                     if response.ok:
                         self.check_proxy_with_proxyinformation(proxy)
@@ -164,10 +176,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
         result = checker.check_proxy(proxy)
         if result.get("status") == True:
             info = result.get("info", {})
-            date = datetime.today().strftime('%d-%m-%Y')
+            date = datetime.today().date()
             time = datetime.today().strftime('%H:%M:%S')
             # форматирование response_time до 3 знаков после запятой
             response_time = round(info.get('responseTime', 0), 3)
+
+
             # Сохраняем результат в базу данных через сериализатор
             proxy_data = {
                 'ip': info.get('ip'),
@@ -180,6 +194,10 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 'date_checked': date,
                 'time_checked': time
             }
+            # Логируем перед сохранением
+            print(f"Date before save: {proxy_data['date_checked']}")
+            print(f"Date type: {type(proxy_data['date_checked'])}")  # Проверка типа
+
             serializer = CheckedProxySerializer(data=proxy_data)
             if serializer.is_valid():
                 serializer.save()
@@ -268,7 +286,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
         cache.set('total_proxies', len(self.proxies_list), timeout=None)
         # запуск потока проверки прокси
-        self.check_proxy_thread = Thread(target=self.check_proxy, args=("https://google.com",))
+        self.check_proxy_thread = Thread(target=self.check_proxy, args=("https://httpbin.org/ip",))
         self.check_proxy_thread.start()
 
         # Проверка, что поток действительно работает
@@ -301,7 +319,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
             draw = 1  # По умолчанию 1, если значение «не определено» или недействительно.
 
         # Фильтрация и разбиение на страницы набора запросов с явным упорядочиванием
-        queryset = self.filter_queryset(self.get_queryset()).order_by('id')  # Убедиться, что сортировка выполнена по «id» или другому полю
+        queryset = self.filter_queryset(self.get_queryset()).order_by(
+            'id')  # Убедиться, что сортировка выполнена по «id» или другому полю
 
         # логика пагинации
         page = self.paginate_queryset(queryset)
@@ -341,7 +360,7 @@ class CleanOldRecordsView(APIView):
 # Представление для списка прокси
 class ProxyListView(View):
     def get(self, request, *args, **kwargs):
-        return render(request, 'checker/proxy_list.html')
+        return render(request, 'checker/home.html')
 
 
 # Представление для страницы "О нас"

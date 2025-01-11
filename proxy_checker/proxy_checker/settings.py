@@ -42,8 +42,7 @@ INSTALLED_APPS = [
     'drf_yasg',
     'checker',
     'corsheaders',
-    'registration',
-]
+    ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

@@ -14,7 +14,7 @@ urlpatterns = [
     path('generate-json-list/', ProxyViewSet.as_view({'get': 'generate_json_list'}), name='generate_json_list'),
     path('timer/', ProxyViewSet.as_view({'get': 'get_timer'}), name='get_timer'),
     path('clean-old-records/', CleanOldRecordsView.as_view(), name='clean_old_records'),
-    path('proxy-list/', ProxyListView.as_view(), name='proxy_list'),
+    path('home/', ProxyListView.as_view(), name='home'),
     path('about/', AboutView.as_view(), name='about'),
     path('faq/', FaqView.as_view(), name='faq'),
 ]
