@@ -8,6 +8,7 @@ from rest_framework import status
 import cloudscraper
 import requests
 import re
+import certifi
 from datetime import datetime, timedelta
 from fake_useragent import UserAgent
 from proxy_information import ProxyInformation
@@ -17,7 +18,6 @@ from threading import Thread, Lock
 from .serializers import CheckedProxySerializer
 from .models import CheckedProxy
 from rest_framework.pagination import PageNumberPagination
-
 
 
 # класс разбиения на страницы
@@ -162,7 +162,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
             for _ in range(max_retries):
                 try:
-                    response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout, verify=False)
+                    response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout, verify=certifi.where())
                     print(f"Прокси {proxy} проверено - Ответ: {response.status_code}")
                     if response.ok:
                         self.check_proxy_with_proxyinformation(proxy)
@@ -176,11 +176,13 @@ class ProxyViewSet(viewsets.ModelViewSet):
         result = checker.check_proxy(proxy)
         if result.get("status") == True:
             info = result.get("info", {})
+            if info.get('protocol') != 'socks5': # Пропускаем сохранение, если протокол не socks5
+                return
+
             date = datetime.today().date()
             time = datetime.today().strftime('%H:%M:%S')
             # форматирование response_time до 3 знаков после запятой
             response_time = round(info.get('responseTime', 0), 3)
-
 
             # Сохраняем результат в базу данных через сериализатор
             proxy_data = {
@@ -194,9 +196,6 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 'date_checked': date,
                 'time_checked': time
             }
-            # Логируем перед сохранением
-            print(f"Date before save: {proxy_data['date_checked']}")
-            print(f"Date type: {type(proxy_data['date_checked'])}")  # Проверка типа
 
             serializer = CheckedProxySerializer(data=proxy_data)
             if serializer.is_valid():
