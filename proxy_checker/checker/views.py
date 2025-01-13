@@ -162,7 +162,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
             for _ in range(max_retries):
                 try:
-                    response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout, verify=certifi.where())
+                    response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout,
+                                            verify=certifi.where())
                     print(f"Прокси {proxy} проверено - Ответ: {response.status_code}")
                     if response.ok:
                         self.check_proxy_with_proxyinformation(proxy)
@@ -176,7 +177,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         result = checker.check_proxy(proxy)
         if result.get("status") == True:
             info = result.get("info", {})
-            if info.get('protocol') != 'socks5': # Пропускаем сохранение, если протокол не socks5
+            if info.get('protocol') != 'socks5':  # Пропускаем сохранение, если протокол не socks5
                 return
 
             date = datetime.today().date()
@@ -187,7 +188,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
             # Сохраняем результат в базу данных через сериализатор
             proxy_data = {
                 'ip': info.get('ip'),
-                'port': int(info.get('port')),
+                'port': info.get('port'),
                 'protocol': info.get('protocol'),
                 'response_time': response_time,
                 'anonymity': info.get('anonymity', ''),
@@ -264,10 +265,13 @@ class ProxyViewSet(viewsets.ModelViewSet):
         proxies = CheckedProxy.objects.all()
 
         # Создать список прокси в формате ip:port
-        proxy_list = [{"ip": proxy.ip, "port": proxy.port} for proxy in proxies]
+        proxy_list = [
+            {"ip": proxy.ip, "port": proxy.port, "protocol": proxy.protocol, "anonymity": proxy.anonymity,
+             "country": proxy.country, "country_code": proxy.country_code}
+            for proxy in proxies]
 
         # Вернуть список как ответ JSON
-        return JsonResponse({'proxy_list': proxy_list})
+        return JsonResponse(proxy_list, safe=False)
 
     # урл для запуска проверки прокси
     @action(detail=False, methods=['post'])

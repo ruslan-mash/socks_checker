@@ -3,7 +3,7 @@ from django.db import models
 
 class CheckedProxy(models.Model):
     ip = models.GenericIPAddressField(protocol="IPv4")
-    port = models.IntegerField()
+    port = models.CharField(max_length=5)
     protocol = models.CharField(max_length=8, default='socks5')
     response_time = models.FloatField(default=0.0)
     anonymity = models.CharField(max_length=50, blank=True, null=True)
