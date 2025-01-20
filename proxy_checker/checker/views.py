@@ -35,7 +35,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.proxies_list = []
-        self.header = {'User-Agent': UserAgent().random}  # разный UserAgent для каждого запроса
+        # self.header = {'User-Agent': UserAgent().random}  # разный UserAgent для каждого запроса
+        self.header = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36'}
         self.txt_sources = [
             "https://spys.me/socks.txt",
             "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
@@ -69,27 +70,36 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 try:
                     response = scraper.get(page_url, timeout=10)
                     response.raise_for_status()
-                    return response.json().get('data', [])
+                    return response.json()
                 except requests.exceptions.RequestException as e:
                     print(f"Попытка {attempt + 1} для {page_url} завершилась с ошибкой: {e}")
                     if attempt == retries - 1:
                         print(f"Не удалось получить данные с {page_url} после {retries} попыток.")
-                        return []
+                        return {}
 
         try:
             first_page_url = f"{base_url}&page=1&sort_by=lastChecked&sort_type=desc"
-            data = fetch_page(first_page_url)
-            total = len(data)
-            print(f"Всего прокси с первой страницы geonode.com: {total}")
+            first_page_data = fetch_page(first_page_url)
+
+            if not first_page_data:
+                return
+
+            data = first_page_data.get('data', [])
+            total_count = first_page_data.get('total', len(data))
+            print(f"Всего {total_count} прокси на geonode.com")
+            total_pages = (total_count // 500) + (1 if total_count % 500 > 0 else 0)
+            print(f"Всего страниц {total_pages}")
+
+            print(f"Всего прокси с первой страницы: {len(data)}")
 
             if data:
                 self.proxies_list.extend([f"{entry.get('ip')}:{entry.get('port')}" for entry in data if
                                           entry.get('ip') and entry.get('port')])
 
-            total_pages = (total // 500) + 1
             for number_page in range(2, total_pages + 1):
                 page_url = f"{base_url}&page={number_page}&sort_by=lastChecked&sort_type=desc"
-                data = fetch_page(page_url)
+                page_data = fetch_page(page_url)
+                data = page_data.get('data', [])
                 for entry in data:
                     ip = entry.get('ip')
                     port = entry.get('port')
@@ -174,35 +184,56 @@ class ProxyViewSet(viewsets.ModelViewSet):
     # Функция детальной проверки прокси с помощью ProxyInformation и записи результата в БД
     def check_proxy_with_proxyinformation(self, proxy):
         checker = ProxyInformation()
-        result = checker.check_proxy(proxy)
-        if result.get("status") == True:
-            info = result.get("info", {})
-            if info.get('protocol') != 'socks5':  # Пропускаем сохранение, если протокол не socks5
-                return
 
-            date = datetime.today().date()
-            time = datetime.today().strftime('%H:%M:%S')
-            # форматирование response_time до 3 знаков после запятой
-            response_time = round(info.get('responseTime', 0), 3)
+        try:
+            result = checker.check_proxy(proxy)
+        except Exception as e:
+            print(f"Error checking proxy {proxy}: {e}")
+            return
 
-            # Сохраняем результат в базу данных через сериализатор
-            proxy_data = {
-                'ip': info.get('ip'),
-                'port': info.get('port'),
-                'protocol': info.get('protocol'),
-                'response_time': response_time,
-                'anonymity': info.get('anonymity', ''),
-                'country': info.get('country', ''),
-                'country_code': info.get('country_code', ''),
-                'date_checked': date,
-                'time_checked': time
-            }
+        # Ensure 'status' exists and is True
+        if result.get("status") is not True:
+            print("Proxy status False")
+            return
 
-            serializer = CheckedProxySerializer(data=proxy_data)
-            if serializer.is_valid():
-                serializer.save()
-            else:
-                print(f"Ошибка сериализатора: {serializer.errors}")
+        # Get 'info' dictionary, and ensure it's not None
+        info = result.get("info", {})
+        if not info:
+            print("No proxy information found")
+            return
+
+        # Check if the protocol is 'socks5'
+        if info.get('protocol') != 'socks5':
+            print("Proxy is not socks5")
+            return
+
+
+        date = datetime.today().date()
+        time = datetime.today().strftime('%H:%M:%S')
+        # форматирование response_time до 3 знаков после запятой
+        response_time = round(info.get('responseTime', 0), 3)
+
+        # Сохраняем результат в базу данных через сериализатор
+        proxy_data = {
+            'ip': info.get('ip'),
+            'port': info.get('port'),
+            'protocol': info.get('protocol'),
+            'response_time': response_time,
+            'anonymity': info.get('anonymity', ''),
+            'country': info.get('country', ''),
+            'country_code': info.get('country_code', ''),
+            'date_checked': date,
+            'time_checked': time
+        }
+
+        serializer = CheckedProxySerializer(data=proxy_data)
+        if serializer.is_valid():
+            serializer.save()
+            print("Прокси сохранен в БД")
+        else:
+            print(f"Ошибка сериализатора: {serializer.errors}")
+            # Дополнительная информация для отладки
+            print(f"Данные для сериализатора: {proxy_data}")
 
     # Подсчет количества прокси и времени выполнения
     def timer(self):

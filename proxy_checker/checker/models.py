@@ -4,9 +4,9 @@ from django.db import models
 class CheckedProxy(models.Model):
     ip = models.GenericIPAddressField(protocol="IPv4")
     port = models.CharField(max_length=5)
-    protocol = models.CharField(max_length=8, default='socks5')
+    protocol = models.CharField(max_length=10, default='socks5')
     response_time = models.FloatField(default=0.0)
-    anonymity = models.CharField(max_length=50, blank=True, null=True)
+    anonymity = models.CharField(max_length=20, blank=True, null=True)
     country = models.CharField(max_length=100, blank=True, null=True)
     country_code = models.CharField(max_length=10, default='N/A')
     date_checked = models.DateField()
