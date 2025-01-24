@@ -18,6 +18,8 @@ from threading import Thread, Lock
 from .serializers import CheckedProxySerializer
 from .models import CheckedProxy
 from rest_framework.pagination import PageNumberPagination
+from itertools import islice
+
 
 
 # класс разбиения на страницы
@@ -35,8 +37,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.proxies_list = []
-        # self.header = {'User-Agent': UserAgent().random}  # разный UserAgent для каждого запроса
-        self.header = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36'}
+        self.header = {'User-Agent': UserAgent().random}  # разный UserAgent для каждого запроса
+        # self.header = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36'}
         self.txt_sources = [
             "https://spys.me/socks.txt",
             "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
@@ -106,7 +108,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                     if ip and port:
                         self.proxies_list.append(f"{ip}:{port}")
                 print(f"Страница {number_page} забрана. Всего забрано прокси: {len(self.proxies_list)}")
-                cache.set('total_proxies', len(self.proxies_list), timeout=None)
+                cache.set('total_proxies', len(set(self.proxies_list)), timeout=None)
         except requests.exceptions.RequestException as e:
             print(f"Ошибка получения информации из {base_url}: {e}")
 
@@ -125,7 +127,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                         if ip and port:
                             self.proxies_list.append(f"{ip}:{port}")
                             # обновление кэш с общим количеством прокси после загрузки.
-                            cache.set('total_proxies', len(self.proxies_list), timeout=None)
+                            cache.set('total_proxies', len(set(self.proxies_list)), timeout=None)
             print(f"Всего прокси из socks.us: {len(data)}")
         except requests.exceptions.RequestException as e:
             print(f"Ошибка получения прокси из  {url}: {e}")
@@ -145,41 +147,65 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 proxy_list_filtered = re.findall(pattern, "\n".join(proxy_list))
                 self.proxies_list.extend(proxy_list_filtered)
                 # обновление кэш с общим количеством прокси после загрузки.
-                cache.set('total_proxies', len(self.proxies_list), timeout=None)
+                cache.set('total_proxies', len(set(self.proxies_list)), timeout=None)
                 total_proxies += len(proxy_list_filtered)
         print(f"Всего прокси из txt_sources : {total_proxies}")
 
-    # Функция предварительной проверки прокси на ответ с передачей на детальную проверку
-    def check_proxy(self, url, timeout=5, max_retries=3):
-        print("Запуск цикла проверки прокси...")
+    # Добавленная функция для разделения списка на батчи
+    def batcher(self, iterable, batch_size):
+        iterator = iter(iterable)
+        while True:
+            batch = list(islice(iterator, batch_size))
+            if not batch:
+                break
+            yield batch
+
+    def check_proxy_batch(self, url, timeout=5, max_retries=3, batch_size=20):
+        print("Запуск проверки прокси пакетами...")
         proxies_to_check = set(self.proxies_list)
-        for count, proxy in enumerate(proxies_to_check, start=1):
-            # Проверяем, если флаг остановки установлен, то выходим из цикла
-            with self.lock:
-                if not cache.get('proxy_check_running', True):
-                    print("Остановка проверки прокси по флагу проверки")
+        if not proxies_to_check:
+            print("Список прокси пуст. Проверка завершена.")
+            return
+
+
+        for batch_number, proxy_batch in enumerate(self.batcher(proxies_to_check, batch_size), start=1):
+            print(f"Проверяется пакет {batch_number}, количество прокси в пакете: {len(proxy_batch)}")
+            threads = []
+
+            for proxy in proxy_batch:
+                thread = Thread(target=self.check_single_proxy, args=(proxy, url, timeout, max_retries))
+                thread.start()
+                threads.append(thread)
+
+            for thread in threads:
+                thread.join()
+
+    def check_single_proxy(self, proxy, url, timeout, max_retries):
+        """Функция проверки одного прокси."""
+        with self.lock:
+            if not cache.get('proxy_check_running', True):
+                print("Остановка проверки прокси по флагу проверки")
+                return
+
+            checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
+            cache.set(self.checked_proxies_count_key, checked_proxies_count + 1, timeout=None)
+            print(f"Проверяется прокси {proxy}...")
+
+        proxy_dict = {
+            'http': f'socks5://{proxy}',
+            'https': f'socks5://{proxy}'
+        }
+
+        for _ in range(max_retries):
+            try:
+                response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout, verify=certifi.where())
+                print(f"Прокси {proxy} проверено - Ответ: {response.status_code}")
+                if response.ok:
+                    self.check_proxy_with_proxyinformation(proxy)
                     break
-
-            with self.lock:
-                checked_proxies_count = cache.get(self.checked_proxies_count_key, 0)
-                cache.set(self.checked_proxies_count_key, checked_proxies_count + 1, timeout=None)
-                print(f"Проверяется прокси {proxy}...")
-
-            proxy_dict = {
-                'http': f'socks5://{proxy}',
-                'https': f'socks5://{proxy}'
-            }
-
-            for _ in range(max_retries):
-                try:
-                    response = requests.get(url=url, headers=self.header, proxies=proxy_dict, timeout=timeout,
-                                            verify=certifi.where())
-                    print(f"Прокси {proxy} проверено - Ответ: {response.status_code}")
-                    if response.ok:
-                        self.check_proxy_with_proxyinformation(proxy)
-                        break
-                except requests.exceptions.RequestException as e:
-                    print(f"Ошибка проверки прокси {proxy}: {e}")
+            except requests.exceptions.RequestException as e:
+                print(f"Ошибка проверки прокси {proxy}: {e}")
+                continue
 
     # Функция детальной проверки прокси с помощью ProxyInformation и записи результата в БД
     def check_proxy_with_proxyinformation(self, proxy):
@@ -304,26 +330,25 @@ class ProxyViewSet(viewsets.ModelViewSet):
         # Вернуть список как ответ JSON
         return JsonResponse(proxy_list, safe=False)
 
-    # урл для запуска проверки прокси
+    # Вызов функции check_proxy_batch в потоке
     @action(detail=False, methods=['post'])
     def start_proxy_check(self, request):
-        print("Запуск проверки прокси...")
+        print("Запуск проверки прокси пакетами...")
 
         self.get_data_from_geonode()
         self.get_data_from_socksus()
         self.get_data_from_txt()
         cache.set('proxy_check_running', True, timeout=None)
 
-        # Только устанавливаем время старта, если оно не было установлено
         if not cache.get(self.start_time_key):
             cache.set(self.start_time_key, datetime.now(), timeout=None)
 
-        cache.set('total_proxies', len(self.proxies_list), timeout=None)
-        # запуск потока проверки прокси
-        self.check_proxy_thread = Thread(target=self.check_proxy, args=("https://httpbin.org/ip",))
+        cache.set('total_proxies', len(set(self.proxies_list)), timeout=None)
+
+        # Запуск проверки в потоке
+        self.check_proxy_thread = Thread(target=self.check_proxy_batch, args=("https://httpbin.org/ip",))
         self.check_proxy_thread.start()
 
-        # Проверка, что поток действительно работает
         if self.check_proxy_thread.is_alive():
             print("Поток проверки работает.")
         else:
