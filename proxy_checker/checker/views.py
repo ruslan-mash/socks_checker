@@ -403,7 +403,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         })
 
 
-# удаление из БД записей старше 24 часов (бесполезны)
+# удаление из БД записей старше 24 часов (старые бесполезны)
 class CleanOldRecordsView(APIView):
 
     def delete(self, request, *args, **kwargs):
