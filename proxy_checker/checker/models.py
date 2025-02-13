@@ -9,6 +9,7 @@ class CheckedProxy(models.Model):
     anonymity = models.CharField(max_length=20, blank=True, null=True)
     country = models.CharField(max_length=100, blank=True, null=True)
     country_code = models.CharField(max_length=10, default='N/A')
+    reputation = models.CharField(max_length=100, blank=True, null=True)  # Добавлено поле reputation
     date_checked = models.DateField()
     time_checked = models.TimeField()
 

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import CheckedProxy
 
+
 # class CheckedProxySerializer(serializers.ModelSerializer):
 #     ip = serializers.IPAddressField(label="ip", max_length=16)
 #     port = serializers.IntegerField(label="Порт")
@@ -21,10 +22,8 @@ class CheckedProxySerializer(serializers.ModelSerializer):
             representation['date_checked'] = instance.date_checked.strftime('%d-%m-%Y')
         return representation
 
-
-
     class Meta:
         model = CheckedProxy
-        fields = ("ip", "port", "protocol", "response_time", "anonymity", "country",  "country_code", "date_checked", "time_checked")
-
-
+        fields = (
+        "ip", "port", "protocol", "response_time", "anonymity", "country", "country_code", "reputation", "date_checked",
+        "time_checked")
