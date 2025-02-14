@@ -488,7 +488,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
         # Фильтрация и разбиение на страницы набора запросов с явным упорядочиванием
         queryset = self.filter_queryset(self.get_queryset()).order_by(
-            'id')  # Убедиться, что сортировка выполнена по «id» или другому полю
+            '-id')  # Убедиться, что сортировка выполнена по «id» или другому полю
 
         # логика пагинации
         page = self.paginate_queryset(queryset)
