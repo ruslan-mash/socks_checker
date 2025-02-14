@@ -21,7 +21,9 @@ from rest_framework.pagination import PageNumberPagination
 from itertools import islice
 import logging
 from bs4 import BeautifulSoup
-
+import base64
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 # Настройка логирования
 logging.basicConfig(
@@ -32,6 +34,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
 
 # класс разбиения на страницы
 class CheckedProxyPagination(PageNumberPagination):
@@ -59,6 +62,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
             "https://raw.githubusercontent.com/yemixzy/proxy-list/main/proxies/socks5.txt",
             "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
             "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
+            "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5.txt",
         ]
         self.lock = Lock()  # Блокировка для обеспечения безопасности потока при изменении proxy_list
         self.checked_proxies_count_key = "checked_proxies_count"
@@ -140,6 +144,77 @@ class ProxyViewSet(viewsets.ModelViewSet):
         except requests.exceptions.RequestException as e:
             logger.error(f"Ошибка получения прокси из  {url}: {e}")
 
+    # Функция забора прокси из proxyfreeonly.com
+
+    def get_data_from_proxyfreeonly(self):
+        url = "https://proxyfreeonly.com/download/FreeProxyList.json"
+        filtered_proxies = 0  # Счетчик добавленных прокси
+
+        try:
+            response = requests.get(url=url, headers=self.header, timeout=10)
+            response.raise_for_status()  # Проверка, нет ли ошибки HTTP
+            data = response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка получения прокси из {url}: {e}")
+            return
+
+        if isinstance(data, list):
+            for entry in data:
+                if isinstance(entry, dict):
+                    ip = entry.get('ip')
+                    port = entry.get('port')
+                    anonymity = entry.get('anonymityLevel', '').lower()
+                    protocols = entry.get('protocols', [])
+
+                    # Фильтрация: только socks5 + elite
+                    if ip and port and anonymity == "elite" and "socks5" in protocols:
+                        self.proxies_list.append(f"{ip}:{port}")
+                        filtered_proxies += 1
+
+            # Обновляем кэш с количеством прокси
+            cache.set('total_proxies', len(set(self.proxies_list)), timeout=None)
+            logger.info(f"Всего подходящих прокси (socks5 + elite) из proxyfreeonly.com: {filtered_proxies}")
+
+    # Функция забора прокси из advanced.name
+    def get_data_from_advanced_name(self):
+        url = "https://advanced.name/freeproxy?type=socks5"
+        an_proxies = 0  # Счетчик добавленных прокси
+
+        try:
+            response = requests.get(url, headers=self.header, timeout=10)
+            response.raise_for_status()  # Проверка, нет ли ошибки HTTP
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка получения прокси из {url}: {e}")
+            return
+
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Поиск всех строк с прокси
+            rows = soup.find_all("tr")
+            for row in rows:
+                ip_td = row.find("td", attrs={"data-ip": True})
+                port_td = row.find("td", attrs={"data-port": True})
+
+                if ip_td and port_td:
+                    # Извлекаем текстовые данные
+                    ip = ip_td.get_text(strip=True)
+                    port = port_td.get_text(strip=True)
+
+                    # Если IP и порт закодированы в Base64 — декодируем
+                    if ip_td.has_attr("data-ip"):
+                        ip = base64.b64decode(ip_td["data-ip"]).decode("utf-8")
+                    if port_td.has_attr("data-port"):
+                        port = base64.b64decode(port_td["data-port"]).decode("utf-8")
+
+                    proxy = f"{ip}:{port}"
+                    self.proxies_list.append(proxy)
+                    an_proxies += 1
+
+            # Обновляем кэш с количеством прокси
+            cache.set('total_proxies', len(set(self.proxies_list)), timeout=None)
+            logger.info(f"Всего прокси из advanced.name: {an_proxies}")
+
     # Функция забора прокси из списков с github
     def get_data_from_txt(self):
         pattern = r'(\d+\.\d+\.\d+\.\d+:\d+)'  # паттерн забора информации из текстового файла ip:port
@@ -169,22 +244,17 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
     def check_proxy_batch(self, url, timeout=5, max_retries=3, batch_size=20):
         logger.info("Запуск проверки прокси пакетами...")
-        proxies_to_check = set(self.proxies_list)
+        proxies_to_check = list(set(self.proxies_list))  # Убираем дубликаты
+
         if not proxies_to_check:
             logger.info("Список прокси пуст. Проверка завершена.")
             return
 
-        for batch_number, proxy_batch in enumerate(self.batcher(proxies_to_check, batch_size), start=1):
-            logger.info(f"Проверяется пакет {batch_number}, количество прокси в пакете: {len(proxy_batch)}")
-            threads = []
-
-            for proxy in proxy_batch:
-                thread = Thread(target=self.check_single_proxy, args=(proxy, url, timeout, max_retries))
-                thread.start()
-                threads.append(thread)
-
-            for thread in threads:
-                thread.join()
+        with ThreadPoolExecutor(max_workers=10) as executor:  # Ограничение на 10 потоков
+            futures = [executor.submit(self.check_single_proxy, proxy, url, timeout, max_retries) for proxy in
+                       proxies_to_check]
+            for future in futures:
+                future.result()  # Ожидание завершения всех потоков
 
     def check_single_proxy(self, proxy, url, timeout, max_retries):
         """Функция проверки одного прокси."""
@@ -282,12 +352,13 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
     def save_proxy_to_db(self, proxy_data):
         """Сохранение или обновление прокси в базе данных."""
-        existing_proxy = CheckedProxy.objects.filter(ip=proxy_data['ip'], port=proxy_data['port']).first()
+        existing_proxy, created = CheckedProxy.objects.update_or_create(
+            ip=proxy_data['ip'], port=proxy_data['port'],
+            defaults=proxy_data
+        )
 
-        if existing_proxy:
-            serializer = CheckedProxySerializer(existing_proxy, data=proxy_data, partial=True)
-        else:
-            serializer = CheckedProxySerializer(data=proxy_data)
+        # Теперь existing_proxy - это объект модели, а не кортеж
+        serializer = CheckedProxySerializer(existing_proxy, data=proxy_data, partial=True)
 
         if serializer.is_valid():
             serializer.save()
@@ -370,9 +441,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def start_proxy_check(self, request):
         logger.info("Запуск проверки прокси пакетами...")
 
-        self.get_data_from_geonode()
         self.get_data_from_socksus()
+        self.get_data_from_proxyfreeonly()
+        self.get_data_from_advanced_name()
         self.get_data_from_txt()
+        self.get_data_from_geonode()
+
         cache.set('proxy_check_running', True, timeout=None)
 
         if not cache.get(self.start_time_key):
