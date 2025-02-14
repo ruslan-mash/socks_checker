@@ -117,3 +117,7 @@ footer {
     max-width: 100%; /* Ограничение ширины */
     height: auto; /* Сохранение пропорций */
 }
+
+.no-gap {
+    margin-bottom: 5px;
+}

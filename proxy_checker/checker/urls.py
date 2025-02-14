@@ -12,6 +12,7 @@ urlpatterns = [
     path('stop-proxy-check/', ProxyViewSet.as_view({'post': 'stop_proxy_check'}), name='stop_proxy_check'),
     path('generate-txt-list/', ProxyViewSet.as_view({'get': 'generate_txt_list'}), name='generate_txt_list'),
     path('generate-json-list/', ProxyViewSet.as_view({'get': 'generate_json_list'}), name='generate_json_list'),
+    path('generate_elite_json/', ProxyViewSet.as_view({'get': 'generate_elite_json'}), name='generate_elite_json'),
     path('timer/', ProxyViewSet.as_view({'get': 'get_timer'}), name='get_timer'),
     path('clean-old-records/', CleanOldRecordsView.as_view(), name='clean_old_records'),
     path('home/', ProxyListView.as_view(), name='home'),

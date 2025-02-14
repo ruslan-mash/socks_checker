@@ -314,6 +314,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
         # Проверка репутации IP
         reputation = self.check_ip_reputation_scamalytics(info.get('ip'))
 
+        # #Проверка анонимности
+        # anonymity = self.check_proxy_anonymity(info.get('ip'), info.get('port'))
+        # if anonymity == "transparent":
+        #     logger.info(f"Прозрачный прокси {proxy} не будет записан в базу.")
+        #     return  # Прерываем выполнение функции, не сохраняя прокси
+
         # Данные для обновления или создания записи
         proxy_data = {
             'ip': info.get('ip'),
@@ -350,6 +356,38 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
         return "unknown"  # Возвращаем значение по умолчанию, если репутация не найдена
 
+    # def check_proxy_anonymity(self, proxy_host, proxy_port):
+    #     proxies = {
+    #         "http": f"socks5h://{proxy_host}:{proxy_port}",
+    #         "https": f"socks5h://{proxy_host}:{proxy_port}",
+    #     }
+    #
+    #     try:
+    #         # Запрашиваем IP через прокси
+    #         response = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=10)
+    #         proxy_ip = response.json().get("origin")
+    #
+    #         # Запрашиваем IP без прокси
+    #         real_ip = requests.get("https://httpbin.org/ip", timeout=10).json().get("origin")
+    #
+    #         # Если прокси не меняет IP, значит он не работает
+    #         if any(ip.strip() == real_ip for ip in proxy_ip.split(",")):
+    #             return "transparent"
+    #
+    #         # Проверяем заголовки, которые может передавать прокси
+    #         headers_response = requests.get("https://httpbin.org/headers", proxies=proxies, timeout=10).json()
+    #         headers = {key.lower(): value for key, value in headers_response.get("headers", {}).items()}
+    #
+    #         # Ищем признаки анонимного прокси
+    #         if any(header in headers for header in ["x-forwarded-for", "via", "proxy-connection"]):
+    #             return f"Anonymous"
+    #         else:
+    #             return f"Elite"
+    #
+    #     except requests.exceptions.RequestException as e:
+    #         return f"Ошибка: {e}"
+
+
     def save_proxy_to_db(self, proxy_data):
         """Сохранение или обновление прокси в базе данных."""
         existing_proxy, created = CheckedProxy.objects.update_or_create(
@@ -357,7 +395,6 @@ class ProxyViewSet(viewsets.ModelViewSet):
             defaults=proxy_data
         )
 
-        # Теперь existing_proxy - это объект модели, а не кортеж
         serializer = CheckedProxySerializer(existing_proxy, data=proxy_data, partial=True)
 
         if serializer.is_valid():
@@ -427,7 +464,23 @@ class ProxyViewSet(viewsets.ModelViewSet):
         # Запросить базу данных для всех допустимых прокси
         proxies = CheckedProxy.objects.all()
 
-        # Создать список прокси в формате ip:port
+        # Создать список прокси
+        proxy_list = [
+            {"ip": proxy.ip, "port": proxy.port, "protocol": proxy.protocol, "anonymity": proxy.anonymity,
+             "country": proxy.country, "country_code": proxy.country_code, "reputation": proxy.reputation}
+            for proxy in proxies]
+
+        # Вернуть список как ответ JSON
+        return JsonResponse(proxy_list, safe=False)
+
+    # урл для генерации JSON элитных прокси
+    @action(detail=False, methods=['get'])
+    def generate_elite_json(self, request):
+        logger.info("Генерация элитного json листа...")
+        # Запросить базу данных для всех допустимых прокси
+        proxies = CheckedProxy.objects.filter(anonymity="Elite", reputation="Low Risk")
+
+        # Создать список прокси
         proxy_list = [
             {"ip": proxy.ip, "port": proxy.port, "protocol": proxy.protocol, "anonymity": proxy.anonymity,
              "country": proxy.country, "country_code": proxy.country_code, "reputation": proxy.reputation}
