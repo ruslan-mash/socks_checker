@@ -20,11 +20,14 @@
                     <th>IP</th>
                     <th>Порт</th>
                     <th>Протокол</th>
-                    <th>Время ответа</th>
+                    <th>Время ответа (с)</th>
                     <th>Анонимность</th>
                     <th>Страна</th>
                     <th>Код страны</th>
                     <th>Уровень риска</th>
+                    <th>Скорость загрузки <br> (Мбит/с)</th>
+                    <th>Скорость выгрузки <br> (Мбит/с)</th>
+                    <th>Пинг (мс)</th>
                     <th>Дата проверки</th>
                     <th>Время проверки</th>
                 </tr>
@@ -181,6 +184,9 @@
                     <td>${item.country}</td>
                     <td>${item.country_code}</td>
                     <td>${item.reputation}</td>
+                    <td>${item.download}</td>
+                    <td>${item.upload}</td>
+                    <td>${item.ping}</td>
                     <td>${item.date_checked}</td>
                     <td>${item.time_checked}</td>
                 `;

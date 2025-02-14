@@ -25,5 +25,5 @@ class CheckedProxySerializer(serializers.ModelSerializer):
     class Meta:
         model = CheckedProxy
         fields = (
-        "ip", "port", "protocol", "response_time", "anonymity", "country", "country_code", "reputation", "date_checked",
+        "ip", "port", "protocol", "response_time", "anonymity", "country", "country_code", "reputation", "download", "upload", "ping", "date_checked",
         "time_checked")

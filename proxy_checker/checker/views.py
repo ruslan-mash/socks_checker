@@ -24,6 +24,9 @@ from bs4 import BeautifulSoup
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+import socks
+import socket
+import speedtest
 
 # Настройка логирования
 logging.basicConfig(
@@ -63,6 +66,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
             "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
             "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
             "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5.txt",
+            "https://vakhov.github.io/fresh-proxy-list/socks5.txt",
+            # "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks5.txt",
         ]
         self.lock = Lock()  # Блокировка для обеспечения безопасности потока при изменении proxy_list
         self.checked_proxies_count_key = "checked_proxies_count"
@@ -242,7 +247,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 break
             yield batch
 
-    def check_proxy_batch(self, url, timeout=5, max_retries=3, batch_size=20):
+    def check_proxy_batch(self, url, timeout=5, max_retries=3, batch_size=30):
         logger.info("Запуск проверки прокси пакетами...")
         proxies_to_check = list(set(self.proxies_list))  # Убираем дубликаты
 
@@ -250,11 +255,13 @@ class ProxyViewSet(viewsets.ModelViewSet):
             logger.info("Список прокси пуст. Проверка завершена.")
             return
 
-        with ThreadPoolExecutor(max_workers=10) as executor:  # Ограничение на 10 потоков
-            futures = [executor.submit(self.check_single_proxy, proxy, url, timeout, max_retries) for proxy in
-                       proxies_to_check]
-            for future in futures:
-                future.result()  # Ожидание завершения всех потоков
+        # Разделение прокси на батчи
+        for batch in self.batcher(proxies_to_check, batch_size):
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [executor.submit(self.check_single_proxy, proxy, url, timeout, max_retries) for proxy in
+                           batch]
+                for future in futures:
+                    future.result()  # Ожидание завершения всех потоков в батче
 
     def check_single_proxy(self, proxy, url, timeout, max_retries):
         """Функция проверки одного прокси."""
@@ -314,11 +321,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
         # Проверка репутации IP
         reputation = self.check_ip_reputation_scamalytics(info.get('ip'))
 
-        # #Проверка анонимности
-        # anonymity = self.check_proxy_anonymity(info.get('ip'), info.get('port'))
-        # if anonymity == "transparent":
-        #     logger.info(f"Прозрачный прокси {proxy} не будет записан в базу.")
-        #     return  # Прерываем выполнение функции, не сохраняя прокси
+        # Проверка скорости и пинга
+        download_speed, upload_speed, ping = self.check_proxy_speed(info.get('ip'), info.get('port'))
 
         # Данные для обновления или создания записи
         proxy_data = {
@@ -331,7 +335,10 @@ class ProxyViewSet(viewsets.ModelViewSet):
             'country_code': info.get('country_code', ''),
             'date_checked': date,
             'time_checked': time,
-            'reputation': reputation if reputation else "unknown"
+            'reputation': reputation if reputation else "unknown",
+            'download': download_speed if download_speed is not None else None,
+            'upload': upload_speed if upload_speed is not None else None,
+            'ping': ping if ping is not None else None
         }
 
         self.save_proxy_to_db(proxy_data)
@@ -356,37 +363,28 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
         return "unknown"  # Возвращаем значение по умолчанию, если репутация не найдена
 
-    # def check_proxy_anonymity(self, proxy_host, proxy_port):
-    #     proxies = {
-    #         "http": f"socks5h://{proxy_host}:{proxy_port}",
-    #         "https": f"socks5h://{proxy_host}:{proxy_port}",
-    #     }
-    #
-    #     try:
-    #         # Запрашиваем IP через прокси
-    #         response = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=10)
-    #         proxy_ip = response.json().get("origin")
-    #
-    #         # Запрашиваем IP без прокси
-    #         real_ip = requests.get("https://httpbin.org/ip", timeout=10).json().get("origin")
-    #
-    #         # Если прокси не меняет IP, значит он не работает
-    #         if any(ip.strip() == real_ip for ip in proxy_ip.split(",")):
-    #             return "transparent"
-    #
-    #         # Проверяем заголовки, которые может передавать прокси
-    #         headers_response = requests.get("https://httpbin.org/headers", proxies=proxies, timeout=10).json()
-    #         headers = {key.lower(): value for key, value in headers_response.get("headers", {}).items()}
-    #
-    #         # Ищем признаки анонимного прокси
-    #         if any(header in headers for header in ["x-forwarded-for", "via", "proxy-connection"]):
-    #             return f"Anonymous"
-    #         else:
-    #             return f"Elite"
-    #
-    #     except requests.exceptions.RequestException as e:
-    #         return f"Ошибка: {e}"
+    def check_proxy_speed(self, proxy_host, proxy_port):
+        """Проверка скорости через Speedtest.net с уменьшенным размером файла."""
+        try:
+            # Настройка SOCKS5-прокси
+            socks.set_default_proxy(socks.SOCKS5, proxy_host, int(proxy_port), True)
+            socket.socket = socks.socksocket  # Перенаправление трафика через прокси
 
+            st = speedtest.Speedtest()
+            st.get_best_server()
+
+            # Уменьшаем нагрузку на сеть (1 поток)
+            download_speed = round(st.download(threads=1) / 1_000_000, 2)  # Мбит/с
+            upload_speed = round(st.upload(threads=1) / 1_000_000, 2)  # Мбит/с
+            ping = round(st.results.ping, 2)  # мс
+
+            logger.info(
+                f"Прокси {proxy_host}:{proxy_port} - Download: {download_speed} Mbps, Upload: {upload_speed} Mbps, Ping: {ping} ms")
+            return download_speed, upload_speed, ping
+
+        except Exception as e:
+            logger.error(f"Ошибка при проверке скорости через Speedtest: {e}")
+            return None, None, None
 
     def save_proxy_to_db(self, proxy_data):
         """Сохранение или обновление прокси в базе данных."""

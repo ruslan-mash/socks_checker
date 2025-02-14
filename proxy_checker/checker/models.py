@@ -10,6 +10,9 @@ class CheckedProxy(models.Model):
     country = models.CharField(max_length=100, blank=True, null=True)
     country_code = models.CharField(max_length=10, default='N/A')
     reputation = models.CharField(max_length=100, blank=True, null=True)  # Добавлено поле reputation
+    download = models.FloatField(default=0.0)
+    upload = models.FloatField(default=0.0)
+    ping = models.FloatField(default=0.0)
     date_checked = models.DateField()
     time_checked = models.TimeField()
 
