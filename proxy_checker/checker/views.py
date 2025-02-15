@@ -19,13 +19,17 @@ from .serializers import CheckedProxySerializer
 from .models import CheckedProxy
 from rest_framework.pagination import PageNumberPagination
 from itertools import islice
-import logging
 from bs4 import BeautifulSoup
 import base64
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event
 from colorlog import ColoredFormatter
-from g4f.client import Client
+import logging
+import json
+from django.http import JsonResponse
+from django.views import View
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from g4f import Client
 
 
 # Настройка логирования
@@ -571,26 +575,6 @@ class CleanOldRecordsView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class AIChat:
-    def generate_answer(self, question_from_html, answers_from_html, unprocessed_page):
-        """Бот с использованием g4f.client"""
-        question = input()
-        try:
-            client = Client()
-            response = client.chat.completions.create(
-                provider="DeepInfraChat",  # Указываем провайдер
-                model="llama-3.1-8b",  # Указываем модель
-                messages=[{"role": "user",
-                           "temperature": 0.7,
-                           "content": f"Ты: бот, отвечающий на заданные вопросы. Область знаний: сетевые технологии, прокси, способы обхода блокировок. Ограничения: вежливо отклоняешь вопросы, не связанные с областью знаний. Вопрос: {question}"}],
-                web_search=True
-            )
-            answer = response.choices[0].message.content
-            logging.info("Ответ успешно сгенерирован.")
-            return answer
-        except Exception as e:
-            logging.error(f"Ошибка при генерации ответа: {e}")
-            return "Ошибка при генерации ответа"
 
 
 # Представление для списка прокси
@@ -614,3 +598,64 @@ class FaqView(View):
 class ArtificialIntelligence(View):
     def get(self, request, *args, **kwargs):
         return render(request, 'checker/ai.html')
+
+
+class AIChat:
+    """Класс чат-бота, использующего g4f.client для генерации ответов"""
+
+    def __init__(self, provider="DeepInfraChat", model="llama-3.3-70b", temperature=0.7):
+        self.client = Client()
+        self.provider = provider
+        self.model = model
+        self.temperature = temperature
+        self.web_search = True
+
+    def generate_answer(self, question: str) -> str:
+        """Генерирует ответ на заданный вопрос"""
+        if not question.strip():
+            return "Пожалуйста, введите корректный вопрос."
+
+        try:
+            response = self.client.chat.completions.create(
+                provider=self.provider,
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "Ты бот, отвечающий на вопросы про сетевые технологии,прокси,парсинг,скрапинг,обход блокировок,анонимность в сети Интенет. Не отвечаешь на политические темы"},
+                    {"role": "user", "content": question}
+                ],
+                temperature=self.temperature,
+                web_search=self.web_search
+
+            )
+            answer = response.choices[0].message.content
+            logging.info("Ответ успешно сгенерирован.")
+            return answer
+        except Exception as e:
+            logging.error(f"Ошибка при генерации ответа: {e}")
+            return "Ошибка при генерации ответа."
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ChatBotView(View):
+    """Класс представления для обработки запросов к боту"""
+
+    def post(self, request, *args, **kwargs):
+        """Обрабатывает POST-запрос, отправляет сообщение в AIChat и возвращает ответ"""
+        try:
+            data = json.loads(request.body)
+            user_message = data.get("message", "").strip()
+
+            if not user_message:
+                return JsonResponse({"response": "Пожалуйста, введите вопрос."}, status=400)
+
+            bot = AIChat()
+            bot_response = bot.generate_answer(user_message)
+
+            return JsonResponse({"response": bot_response})
+        except Exception as e:
+            logging.error(f"Ошибка в обработке запроса: {e}")
+            return JsonResponse({"response": "Ошибка при обработке запроса"}, status=500)
+
+    def get(self, request, *args, **kwargs):
+        """Возвращает сообщение, если кто-то пытается обратиться GET-запросом"""
+        return JsonResponse({"response": "Метод GET не поддерживается"}, status=405)
+

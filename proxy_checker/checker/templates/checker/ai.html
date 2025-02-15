@@ -1,15 +1,36 @@
 {% extends 'checker/base.html' %}
 
 {% block content %}
-<div class="container chat-container" style="display: flex; flex-direction: column; height: calc(100vh - 60px); padding-bottom: 60px;">
-    <h2>Чат с ботом</h2>
-    <div id="chat-box" class="border p-3" style="flex: 1; overflow-y: auto; background: #f8f9fa; margin-bottom: 10px;"></div>
+<div class="container chat-container" style="display: flex; flex-direction: column; height: calc(100vh - 120px);">
+    <h2>Если ещё остались вопросы, можно попробовать задать их чат-боту</h2>
+    <div id="chat-box" class="border p-3" style="flex: 1; overflow-y: auto; max-height: 60vh; background: #f8f9fa; margin-bottom: 10px; padding: 10px; border-radius: 5px; scrollbar-width: thin; scrollbar-color: #06a7bd #f0f0f0;">
+        <!-- Сообщения появятся здесь -->
+    </div>
 </div>
 
-<div class="input-group" style="position: fixed; bottom: 0; width: 100%; background: white; padding: 10px; display: flex; justify-content: center; align-items: center; border-top: 1px solid #ddd;">
-    <textarea id="user-input" class="form-control" placeholder="Введите ваш вопрос..." rows="3" style="width: 60%; resize: none; overflow-y: auto;"></textarea>
+<div class="input-group" style="position: absolute; bottom: 80px; width: 100%; background: #f0f0f0;; padding: 10px; display: flex; justify-content: center; align-items: center; border-top: 1px solid #ddd;">
+    <textarea id="user-input" class="form-control" placeholder="Введите ваш вопрос..." rows="3" style="width: 60%; resize: none; overflow-y: auto; max-height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; scrollbar-width: thin; scrollbar-color: #06a7bd #f0f0f0;"></textarea>
     <button class="btn btn-primary" id="send-btn" style="margin-left: 10px;">Отправить</button>
 </div>
+
+<style>
+    .chat-message {
+        max-width: 70%;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 10px;
+        word-wrap: break-word;
+    }
+    .user-message {
+        background-color: #d1e7dd;
+        align-self: flex-end;
+        text-align: right;
+    }
+    .bot-message {
+        background-color: #f8d7da;
+        align-self: flex-start;
+    }
+</style>
 
 <script>
     document.getElementById("send-btn").addEventListener("click", function() {
@@ -17,7 +38,12 @@
         if (userInput.trim() === "") return;
 
         let chatBox = document.getElementById("chat-box");
-        chatBox.innerHTML += `<div><strong>Вы:</strong> ${userInput}</div>`;
+
+        // Добавляем сообщение пользователя
+        let userMessageDiv = document.createElement("div");
+        userMessageDiv.className = "chat-message user-message";
+        userMessageDiv.innerHTML = `<strong>Вы:</strong><br> ${userInput}`;
+        chatBox.appendChild(userMessageDiv);
         document.getElementById("user-input").value = "";
 
         fetch("/api/chatbot/", {
@@ -30,11 +56,22 @@
         })
         .then(response => response.json())
         .then(data => {
-            chatBox.innerHTML += `<div><strong>Бот:</strong> ${data.response}</div>`;
+            let botResponse = formatBotResponse(data.response);
+
+            // Добавляем сообщение бота
+            let botMessageDiv = document.createElement("div");
+            botMessageDiv.className = "chat-message bot-message";
+            botMessageDiv.innerHTML = `<strong>Бот:</strong><br> ${botResponse}`;
+            chatBox.appendChild(botMessageDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
         })
         .catch(error => console.error("Ошибка:", error));
     });
+
+    function formatBotResponse(response) {
+        let paragraphs = response.split("\n").filter(p => p.trim() !== "");
+        return paragraphs.map(p => `<p>${p}</p>`).join("");
+    }
 
     function getCookie(name) {
         let cookieValue = null;

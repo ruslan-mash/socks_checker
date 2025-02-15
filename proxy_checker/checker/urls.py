@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProxyViewSet, CleanOldRecordsView, ProxyListView, AboutView, FaqView, ArtificialIntelligence
+from .views import ProxyViewSet, CleanOldRecordsView, ProxyListView, AboutView, FaqView, ArtificialIntelligence, ChatBotView
 
 # Create a router and register our viewsets with it.
 router = DefaultRouter()
@@ -19,5 +19,5 @@ urlpatterns = [
     path('about/', AboutView.as_view(), name='about'),
     path('faq/', FaqView.as_view(), name='faq'),
     path('ai/', ArtificialIntelligence.as_view(), name='ai'),
-
+    path("api/chatbot/", ChatBotView.as_view(), name="chatbot"),
 ]
