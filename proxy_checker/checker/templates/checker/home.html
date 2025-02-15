@@ -8,7 +8,7 @@
     <div class="buttons">
         <button class="button start" onclick="startProxyCheck()">Начать проверку</button>
         <button class="button stop" onclick="stopProxyCheck()">Остановить проверку</button>
-        <button class="button clean" onclick="cleanOldRecords()">Очистить старые записи</button>
+        <button class="button clean" onclick="cleanOldRecords()">Очистить записи старше 24 часов </button>
     </div>
 
     <!-- Таблица списка прокси -->
@@ -26,8 +26,6 @@
                     <th>Код страны</th>
                     <th>Уровень риска</th>
                     <th>Скорость загрузки <br> (Мбит/с)</th>
-                    <th>Скорость выгрузки <br> (Мбит/с)</th>
-                    <th>Пинг (мс)</th>
                     <th>Дата проверки</th>
                     <th>Время проверки</th>
                 </tr>
@@ -185,8 +183,6 @@
                     <td>${item.country_code}</td>
                     <td>${item.reputation}</td>
                     <td>${item.download}</td>
-                    <td>${item.upload}</td>
-                    <td>${item.ping}</td>
                     <td>${item.date_checked}</td>
                     <td>${item.time_checked}</td>
                 `;

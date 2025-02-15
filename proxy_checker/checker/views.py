@@ -27,16 +27,31 @@ from threading import Event
 import socks
 import socket
 import speedtest
+import time
+from colorlog import ColoredFormatter
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler()  # Вывод в консоль
-    ]
+formatter = ColoredFormatter(
+    "%(log_color)s%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    reset=True,
+    log_colors={
+        'DEBUG': 'cyan',
+        'INFO': 'green',
+        'WARNING': 'yellow',
+        'ERROR': 'red',
+        'CRITICAL': 'red,bg_white',
+    },
+    secondary_log_colors={},
+    style='%'
 )
+
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler)
 
 
 # класс разбиения на страницы
@@ -67,7 +82,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
             "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
             "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5.txt",
             "https://vakhov.github.io/fresh-proxy-list/socks5.txt",
-            # "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks5.txt",
+            "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks5.txt",
         ]
         self.lock = Lock()  # Блокировка для обеспечения безопасности потока при изменении proxy_list
         self.checked_proxies_count_key = "checked_proxies_count"
@@ -247,7 +262,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
                 break
             yield batch
 
-    def check_proxy_batch(self, url, timeout=5, max_retries=3, batch_size=30):
+    def check_proxy_batch(self, url, timeout=5, max_retries=3, batch_size=24):
         logger.info("Запуск проверки прокси пакетами...")
         proxies_to_check = list(set(self.proxies_list))  # Убираем дубликаты
 
@@ -322,7 +337,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
         reputation = self.check_ip_reputation_scamalytics(info.get('ip'))
 
         # Проверка скорости и пинга
-        download_speed, upload_speed, ping = self.check_proxy_speed(info.get('ip'), info.get('port'))
+        download_speed = self.check_proxy_speed(info.get('ip'), info.get('port'))
 
         # Данные для обновления или создания записи
         proxy_data = {
@@ -337,8 +352,6 @@ class ProxyViewSet(viewsets.ModelViewSet):
             'time_checked': time,
             'reputation': reputation if reputation else "unknown",
             'download': download_speed if download_speed is not None else None,
-            'upload': upload_speed if upload_speed is not None else None,
-            'ping': ping if ping is not None else None
         }
 
         self.save_proxy_to_db(proxy_data)
@@ -363,28 +376,37 @@ class ProxyViewSet(viewsets.ModelViewSet):
 
         return "unknown"  # Возвращаем значение по умолчанию, если репутация не найдена
 
-    def check_proxy_speed(self, proxy_host, proxy_port):
-        """Проверка скорости через Speedtest.net с уменьшенным размером файла."""
+    def check_proxy_speed(self, proxy_host, proxy_port,
+                          url="https://archive.org/download/testfile/TESTFILEtym_spectrogram.png"):
+        """Проверка скорости загрузки через прокси без сохранения файла."""
         try:
             # Настройка SOCKS5-прокси
             socks.set_default_proxy(socks.SOCKS5, proxy_host, int(proxy_port), True)
             socket.socket = socks.socksocket  # Перенаправление трафика через прокси
 
-            st = speedtest.Speedtest()
-            st.get_best_server()
+            # Замер времени загрузки
+            start_time = time.time()
+            response = requests.get(url, stream=True, timeout=10)
+            response.raise_for_status()  # Проверка на ошибки HTTP
 
-            # Уменьшаем нагрузку на сеть (1 поток)
-            download_speed = round(st.download(threads=1) / 1_000_000, 2)  # Мбит/с
-            upload_speed = round(st.upload(threads=1) / 1_000_000, 2)  # Мбит/с
-            ping = round(st.results.ping, 2)  # мс
+            file_size = int(response.headers.get("content-length", 0))
+            downloaded_size = 0
 
-            logger.info(
-                f"Прокси {proxy_host}:{proxy_port} - Download: {download_speed} Mbps, Upload: {upload_speed} Mbps, Ping: {ping} ms")
-            return download_speed, upload_speed, ping
+            for chunk in response.iter_content(chunk_size=8192):
+                downloaded_size += len(chunk)
 
+            end_time = time.time()
+
+            if file_size > 0 and downloaded_size > 0:
+                download_speed = round((downloaded_size / (end_time - start_time)) / 1_000_000, 2)  # Мбит/с
+                logger.info(f"Скорость загрузки через прокси {proxy_host}:{proxy_port}: {download_speed:.2f} Mbps")
+                return download_speed
+            else:
+                logger.error("Не удалось определить размер загруженных данных.")
+                return None
         except Exception as e:
-            logger.error(f"Ошибка при проверке скорости через Speedtest: {e}")
-            return None, None, None
+            logger.error(f"Ошибка при проверке скорости через curl: {e}")
+            return None
 
     def save_proxy_to_db(self, proxy_data):
         """Сохранение или обновление прокси в базе данных."""
