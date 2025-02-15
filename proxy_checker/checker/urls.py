@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProxyViewSet, CleanOldRecordsView, ProxyListView, AboutView, FaqView
+from .views import ProxyViewSet, CleanOldRecordsView, ProxyListView, AboutView, FaqView, ArtificialIntelligence
 
 # Create a router and register our viewsets with it.
 router = DefaultRouter()
@@ -18,4 +18,6 @@ urlpatterns = [
     path('home/', ProxyListView.as_view(), name='home'),
     path('about/', AboutView.as_view(), name='about'),
     path('faq/', FaqView.as_view(), name='faq'),
+    path('ai/', ArtificialIntelligence.as_view(), name='ai'),
+
 ]

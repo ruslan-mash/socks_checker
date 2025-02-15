@@ -121,3 +121,30 @@ footer {
 .no-gap {
     margin-bottom: 5px;
 }
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 80vh; /* Высота контейнера (80% высоты экрана) */
+    gap: 10px; /* Расстояние между полями */
+}
+
+#questions-box, #answers-box {
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background: #f8f9fa;
+    overflow-y: auto; /* Прокрутка по вертикали */
+    padding: 10px;
+}
+
+#questions-box {
+    flex: 0.65; /* 65% высоты контейнера */
+}
+
+#answers-box {
+    flex: 0.35; /* 35% высоты контейнера */
+}
+
+.input-group {
+    margin-top: 10px;
+}

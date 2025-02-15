@@ -24,16 +24,33 @@ from bs4 import BeautifulSoup
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from colorlog import ColoredFormatter
+from g4f.client import Client
+
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler()  # Вывод в консоль
-    ]
+formatter = ColoredFormatter(
+    "%(log_color)s%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    reset=True,
+    log_colors={
+        'DEBUG': 'cyan',
+        'INFO': 'green',
+        'WARNING': 'yellow',
+        'ERROR': 'red',
+        'CRITICAL': 'red,bg_white',
+    },
+    secondary_log_colors={},
+    style='%'
 )
+
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler)
+
 
 
 # класс разбиения на страницы
@@ -63,6 +80,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
             "https://sunny9577.github.io/proxy-scraper/generated/socks5_proxies.txt",
             "https://www.proxy-list.download/api/v1/get?type=socks5&anon=elite",
             "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5.txt",
+            "https://vakhov.github.io/fresh-proxy-list/socks5.txt",
+            "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks5.txt",
         ]
         self.lock = Lock()  # Блокировка для обеспечения безопасности потока при изменении proxy_list
         self.checked_proxies_count_key = "checked_proxies_count"
@@ -250,11 +269,13 @@ class ProxyViewSet(viewsets.ModelViewSet):
             logger.info("Список прокси пуст. Проверка завершена.")
             return
 
-        with ThreadPoolExecutor(max_workers=10) as executor:  # Ограничение на 10 потоков
-            futures = [executor.submit(self.check_single_proxy, proxy, url, timeout, max_retries) for proxy in
-                       proxies_to_check]
-            for future in futures:
-                future.result()  # Ожидание завершения всех потоков
+        # Разделение прокси на батчи
+        for batch in self.batcher(proxies_to_check, batch_size):
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [executor.submit(self.check_single_proxy, proxy, url, timeout, max_retries) for proxy in
+                           batch]
+                for future in futures:
+                    future.result()  # Ожидание завершения всех потоков в батче
 
     def check_single_proxy(self, proxy, url, timeout, max_retries):
         """Функция проверки одного прокси."""
@@ -312,13 +333,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
         response_time = round(info.get('responseTime', 0), 3)
 
         # Проверка репутации IP
-        reputation = self.check_ip_reputation_scamalytics(info.get('ip'))
+        reputation, score = self.check_ip_reputation_scamalytics(info.get('ip'))
 
-        # #Проверка анонимности
-        # anonymity = self.check_proxy_anonymity(info.get('ip'), info.get('port'))
-        # if anonymity == "transparent":
-        #     logger.info(f"Прозрачный прокси {proxy} не будет записан в базу.")
-        #     return  # Прерываем выполнение функции, не сохраняя прокси
 
         # Данные для обновления или создания записи
         proxy_data = {
@@ -331,7 +347,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
             'country_code': info.get('country_code', ''),
             'date_checked': date,
             'time_checked': time,
-            'reputation': reputation if reputation else "unknown"
+            'reputation': reputation if reputation else "unknown",
+            'score': score if score else "unknown"
         }
 
         self.save_proxy_to_db(proxy_data)
@@ -341,52 +358,28 @@ class ProxyViewSet(viewsets.ModelViewSet):
         url = f"https://scamalytics.com/ip/{ip_address}"
         response = requests.get(url, headers=self.header)
 
+        reputation = "unknown"
+        score = "unknown"
+
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
-            risk_level = soup.find("div", class_="panel_title")
+            risk_level = soup.find("div", class_="panel_title high_risk")
+            risk_score = soup.find("div", class_="score")
 
             if risk_level:
                 reputation = risk_level.text.strip()
                 logger.info(f"Репутация IP {ip_address}: {reputation}")
-                return reputation
-            else:
-                logger.info("Не удалось найти информацию о репутации.")
+
+            if risk_score:
+                score_match = re.search(r"\d+", risk_score.text)  # Исправлено
+                if score_match:
+                    score = score_match.group()
+                    logger.info(f"Оценка мошенничества {ip_address}: {score}")
+
         else:
             logger.error(f"Ошибка: {response.status_code}")
 
-        return "unknown"  # Возвращаем значение по умолчанию, если репутация не найдена
-
-    # def check_proxy_anonymity(self, proxy_host, proxy_port):
-    #     proxies = {
-    #         "http": f"socks5h://{proxy_host}:{proxy_port}",
-    #         "https": f"socks5h://{proxy_host}:{proxy_port}",
-    #     }
-    #
-    #     try:
-    #         # Запрашиваем IP через прокси
-    #         response = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=10)
-    #         proxy_ip = response.json().get("origin")
-    #
-    #         # Запрашиваем IP без прокси
-    #         real_ip = requests.get("https://httpbin.org/ip", timeout=10).json().get("origin")
-    #
-    #         # Если прокси не меняет IP, значит он не работает
-    #         if any(ip.strip() == real_ip for ip in proxy_ip.split(",")):
-    #             return "transparent"
-    #
-    #         # Проверяем заголовки, которые может передавать прокси
-    #         headers_response = requests.get("https://httpbin.org/headers", proxies=proxies, timeout=10).json()
-    #         headers = {key.lower(): value for key, value in headers_response.get("headers", {}).items()}
-    #
-    #         # Ищем признаки анонимного прокси
-    #         if any(header in headers for header in ["x-forwarded-for", "via", "proxy-connection"]):
-    #             return f"Anonymous"
-    #         else:
-    #             return f"Elite"
-    #
-    #     except requests.exceptions.RequestException as e:
-    #         return f"Ошибка: {e}"
-
+        return reputation, score  # Теперь возвращаем ДВА значения
 
     def save_proxy_to_db(self, proxy_data):
         """Сохранение или обновление прокси в базе данных."""
@@ -494,11 +487,12 @@ class ProxyViewSet(viewsets.ModelViewSet):
     def start_proxy_check(self, request):
         logger.info("Запуск проверки прокси пакетами...")
 
-        self.get_data_from_socksus()
         self.get_data_from_proxyfreeonly()
         self.get_data_from_advanced_name()
         self.get_data_from_txt()
         self.get_data_from_geonode()
+        self.get_data_from_socksus()
+
 
         cache.set('proxy_check_running', True, timeout=None)
 
@@ -565,17 +559,38 @@ class ProxyViewSet(viewsets.ModelViewSet):
         })
 
 
-# удаление из БД записей старше 24 часов (старые бесполезны)
+# удаление из БД записей старше 48 часов (старые бесполезны)
 class CleanOldRecordsView(APIView):
 
     def delete(self, request, *args, **kwargs):
         try:
-            threshold_date = datetime.today() - timedelta(days=1)  # Данные старше 1 дня
+            threshold_date = datetime.today() - timedelta(days=2)  # Данные старше 2 дня
             old_records = CheckedProxy.objects.filter(date_checked__lt=threshold_date)
             count, _ = old_records.delete()
             return Response({"message": f"Удалено {count} старых записей."}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AIChat:
+    def generate_answer(self, question_from_html, answers_from_html, unprocessed_page):
+        """Бот с использованием g4f.client"""
+        question = input()
+        try:
+            client = Client()
+            response = client.chat.completions.create(
+                provider="DeepInfraChat",  # Указываем провайдер
+                model="llama-3.1-8b",  # Указываем модель
+                messages=[{"role": "user",
+                           "temperature": 0.7,
+                           "content": f"Ты: бот, отвечающий на заданные вопросы. Область знаний: сетевые технологии, прокси, способы обхода блокировок. Ограничения: вежливо отклоняешь вопросы, не связанные с областью знаний. Вопрос: {question}"}],
+                web_search=True
+            )
+            answer = response.choices[0].message.content
+            logging.info("Ответ успешно сгенерирован.")
+            return answer
+        except Exception as e:
+            logging.error(f"Ошибка при генерации ответа: {e}")
+            return "Ошибка при генерации ответа"
 
 
 # Представление для списка прокси
@@ -594,3 +609,8 @@ class AboutView(View):
 class FaqView(View):
     def get(self, request, *args, **kwargs):
         return render(request, 'checker/faq.html')
+
+# Представление для страницы AI
+class ArtificialIntelligence(View):
+    def get(self, request, *args, **kwargs):
+        return render(request, 'checker/ai.html')

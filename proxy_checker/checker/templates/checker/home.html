@@ -8,7 +8,7 @@
     <div class="buttons">
         <button class="button start" onclick="startProxyCheck()">Начать проверку</button>
         <button class="button stop" onclick="stopProxyCheck()">Остановить проверку</button>
-        <button class="button clean" onclick="cleanOldRecords()">Очистить старые записи</button>
+        <button class="button clean" onclick="cleanOldRecords()">Очистить записи старше 48 часов</button>
     </div>
 
     <!-- Таблица списка прокси -->
@@ -20,11 +20,12 @@
                     <th>IP</th>
                     <th>Порт</th>
                     <th>Протокол</th>
-                    <th>Время ответа</th>
+                    <th>Время ответа (с)</th>
                     <th>Анонимность</th>
                     <th>Страна</th>
                     <th>Код страны</th>
                     <th>Уровень риска</th>
+                    <th>Оценка мошенничества</th>
                     <th>Дата проверки</th>
                     <th>Время проверки</th>
                 </tr>
@@ -181,6 +182,7 @@
                     <td>${item.country}</td>
                     <td>${item.country_code}</td>
                     <td>${item.reputation}</td>
+                    <td>${item.score}</td>
                     <td>${item.date_checked}</td>
                     <td>${item.time_checked}</td>
                 `;
