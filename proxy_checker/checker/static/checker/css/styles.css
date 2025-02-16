@@ -169,6 +169,7 @@ footer {
 .table-container {
     overflow: auto;
     max-height: none;   /* Снимаем ограничение высоты */
+    margin-bottom: 15px; /* Добавляем отступ снизу таблицы */
 }
 
 .centered-img {

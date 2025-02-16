@@ -35,8 +35,6 @@ from rest_framework.decorators import action
 from .models import CheckedProxy
 import logging
 
-
-
 # Настройка логирования
 formatter = ColoredFormatter(
     "%(log_color)s%(asctime)s [%(levelname)s] %(message)s",
@@ -59,7 +57,6 @@ handler.setFormatter(formatter)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
-
 
 
 # класс разбиения на страницы
@@ -344,7 +341,6 @@ class ProxyViewSet(viewsets.ModelViewSet):
         # Проверка репутации IP
         reputation, score = self.check_ip_reputation_scamalytics(info.get('ip'))
 
-
         # Данные для обновления или создания записи
         proxy_data = {
             'ip': info.get('ip'),
@@ -497,7 +493,7 @@ class ProxyViewSet(viewsets.ModelViewSet):
             proxy_list = [
                 {"ip": proxy.ip, "port": proxy.port, "protocol": proxy.protocol,
                  "anonymity": proxy.anonymity, "country": proxy.country,
-                 "country_code": proxy.country_code, "reputation": proxy.reputation}
+                 "country_code": proxy.country_code, "reputation": proxy.reputation, "score": proxy.score}
                 for proxy in proxies
             ]
 
@@ -518,7 +514,6 @@ class ProxyViewSet(viewsets.ModelViewSet):
         self.get_data_from_txt()
         self.get_data_from_geonode()
         self.get_data_from_socksus()
-
 
         cache.set('proxy_check_running', True, timeout=None)
 
@@ -598,7 +593,6 @@ class CleanOldRecordsView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
 # Представление для списка прокси
 class ProxyListView(View):
     def get(self, request, *args, **kwargs):
@@ -615,6 +609,7 @@ class AboutView(View):
 class FaqView(View):
     def get(self, request, *args, **kwargs):
         return render(request, 'checker/faq.html')
+
 
 # Представление для страницы AI
 class ArtificialIntelligence(View):
@@ -642,7 +637,8 @@ class AIChat:
                 provider=self.provider,
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "Ты бот, отвечающий на вопросы про сетевые технологии,прокси,парсинг и скрапинг сайтов,обход блокировок,анонимность в сети Интенет. Не отвечаешь на политические темы"},
+                    {"role": "system",
+                     "content": "Ты бот, отвечающий на вопросы про сетевые технологии,прокси,парсинг и скрапинг сайтов,обход блокировок,анонимность в сети Интенет. Не отвечаешь на политические темы"},
                     {"role": "user", "content": question}
                 ],
                 temperature=self.temperature,
@@ -655,6 +651,7 @@ class AIChat:
         except Exception as e:
             logging.error(f"Ошибка при генерации ответа: {e}")
             return "Ошибка при генерации ответа."
+
 
 @method_decorator(csrf_exempt, name="dispatch")
 class ChatBotView(View):
@@ -680,4 +677,3 @@ class ChatBotView(View):
     def get(self, request, *args, **kwargs):
         """Возвращает сообщение, если кто-то пытается обратиться GET-запросом"""
         return JsonResponse({"response": "Метод GET не поддерживается"}, status=405)
-
