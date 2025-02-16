@@ -23,13 +23,18 @@ from bs4 import BeautifulSoup
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from colorlog import ColoredFormatter
-import logging
 import json
-from django.http import JsonResponse
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from g4f import Client
+from django.db.models import F, IntegerField
+from django.db.models.functions import Cast
+from django.http import JsonResponse
+from rest_framework.decorators import action
+from .models import CheckedProxy
+import logging
+
 
 
 # Настройка логирования
@@ -351,8 +356,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
             'country_code': info.get('country_code', ''),
             'date_checked': date,
             'time_checked': time,
-            'reputation': reputation if reputation else "unknown",
-            'score': score if score else "unknown"
+            'reputation': reputation if reputation else None,
+            'score': score if score else None
         }
 
         self.save_proxy_to_db(proxy_data)
@@ -362,8 +367,8 @@ class ProxyViewSet(viewsets.ModelViewSet):
         url = f"https://scamalytics.com/ip/{ip_address}"
         response = requests.get(url, headers=self.header)
 
-        reputation = "unknown"
-        score = "unknown"
+        reputation = None
+        score = None
 
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -474,17 +479,34 @@ class ProxyViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def generate_elite_json(self, request):
         logger.info("Генерация элитного json листа...")
-        # Запросить базу данных для всех допустимых прокси
-        proxies = CheckedProxy.objects.filter(anonymity="Elite", reputation="Low Risk")
+        try:
+            # Приводим поле `score` к целому числу и фильтруем по нужным критериям
+            proxies = CheckedProxy.objects.annotate(
+                score_int=Cast('score', IntegerField())  # Приводим строковое поле 'score' к типу IntegerField
+            ).filter(
+                anonymity="Elite",
+                score_int__gte=0,  # score >= 0
+                score_int__lte=40  # score <= 40
+            )
 
-        # Создать список прокси
-        proxy_list = [
-            {"ip": proxy.ip, "port": proxy.port, "protocol": proxy.protocol, "anonymity": proxy.anonymity,
-             "country": proxy.country, "country_code": proxy.country_code, "reputation": proxy.reputation}
-            for proxy in proxies]
+            # Если нет подходящих прокси
+            if not proxies:
+                return JsonResponse({"error": "Нет подходящих прокси"}, status=404)
 
-        # Вернуть список как ответ JSON
-        return JsonResponse(proxy_list, safe=False)
+            # Создаем список прокси
+            proxy_list = [
+                {"ip": proxy.ip, "port": proxy.port, "protocol": proxy.protocol,
+                 "anonymity": proxy.anonymity, "country": proxy.country,
+                 "country_code": proxy.country_code, "reputation": proxy.reputation}
+                for proxy in proxies
+            ]
+
+            # Возвращаем список как ответ JSON
+            return JsonResponse(proxy_list, safe=False)
+
+        except Exception as e:
+            logger.error(f"Ошибка при генерации JSON: {e}")
+            return JsonResponse({"error": "Ошибка при обработке запроса"}, status=500)
 
     # Вызов функции check_proxy_batch в потоке
     @action(detail=False, methods=['post'])
@@ -620,7 +642,7 @@ class AIChat:
                 provider=self.provider,
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "Ты бот, отвечающий на вопросы про сетевые технологии,прокси,парсинг,скрапинг,обход блокировок,анонимность в сети Интенет. Не отвечаешь на политические темы"},
+                    {"role": "system", "content": "Ты бот, отвечающий на вопросы про сетевые технологии,прокси,парсинг и скрапинг сайтов,обход блокировок,анонимность в сети Интенет. Не отвечаешь на политические темы"},
                     {"role": "user", "content": question}
                 ],
                 temperature=self.temperature,

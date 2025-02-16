@@ -3,19 +3,19 @@
 {% block content %}
 <div class="container chat-container" style="display: flex; flex-direction: column; height: calc(100vh - 120px);">
     <h2>Если остались ещё вопросы, можно задать их чат-боту</h2>
-    <div id="chat-box" class="border p-3" style="flex: 1; overflow-y: auto; max-height: 60vh; background: #f8f9fa; margin-bottom: 10px; padding: 10px; border-radius: 5px; scrollbar-width: thin; scrollbar-color: #06a7bd #f0f0f0;">
+    <div id="chat-box" class="border p-3" style="flex: 1; overflow-y: auto; max-height: 66vh; background: #d9f5f4; margin-bottom: 10px; padding: 10px; border-radius: 5px; scrollbar-width: thin; scrollbar-color: #06a7bd #f0f0f0;">
         <!-- Сообщения появятся здесь -->
     </div>
 </div>
 
-<div class="input-group" style="position: absolute; bottom: 80px; width: 100%; background: #f0f0f0;; padding: 10px; display: flex; justify-content: center; align-items: center; border-top: 1px solid #ddd;">
+<div class="input-group" style="position: absolute; bottom: 80px; width: 100%; background: #b1e8e8;; padding: 10px; display: flex; justify-content: center; align-items: center; border-top: 1px solid #ddd;">
     <textarea id="user-input" class="form-control" placeholder="Введите ваш вопрос..." rows="3" style="width: 60%; resize: none; overflow-y: auto; max-height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; scrollbar-width: thin; scrollbar-color: #06a7bd #f0f0f0;"></textarea>
     <button class="btn btn-primary" id="send-btn" style="margin-left: 10px;">Отправить</button>
 </div>
 
 <style>
     .chat-message {
-        max-width: 70%;
+        max-width: 85%;
         padding: 10px;
         margin: 5px 0;
         border-radius: 10px;
@@ -24,11 +24,23 @@
     .user-message {
         background-color: #A1E3F9;
         align-self: flex-end;
-        text-align: right;
+        text-align: right;  /* Ensures the text aligns to the right */
+        margin-left: auto;  /* Pushes it to the right side */
     }
     .bot-message {
         background-color: #D1F8EF;
         align-self: flex-start;
+    }
+    .chat-container {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        background-color: #f9f9f9;
     }
 </style>
 
@@ -69,9 +81,36 @@
     });
 
     function formatBotResponse(response) {
-        let paragraphs = response.split("\n").filter(p => p.trim() !== "");
-        return paragraphs.map(p => `<p>${p}</p>`).join("");
+        // Разделяем текст на абзацы
+        let paragraphs = response.split('\n').filter(p => p.trim() !== "");
+
+        let formattedResponse = paragraphs.map(paragraph => {
+            // Если текст начинается с "**", это жирный текст
+            if (/^\*\*(.*?)\*\*$/.test(paragraph)) {
+                return `<strong>${paragraph.replace(/\*\*(.*?)\*\*/,'$1').trim()}</strong>`;
+            }
+            // Проверяем, является ли строка элементом маркированного списка
+            else if (/^\*/.test(paragraph)) {
+                return `<li>${paragraph.replace(/^\*/,'').trim()}</li>`;
+            }
+            // Проверяем, является ли строка элементом нумерованного списка
+            else if (/^\d+\./.test(paragraph)) {
+                return `<li>${paragraph.replace(/^\d+\./,'').trim()}</li>`;
+            }
+            // Обычный текст - заключаем в <p>
+            return `<p>${paragraph.trim()}</p>`;
+        }).join("");
+
+        // Оборачиваем список в <ul>, если есть элементы списка
+        if (formattedResponse.includes('<li>')) {
+            formattedResponse = `<ul>${formattedResponse}</ul>`;
+        }
+
+        return formattedResponse;
     }
+
+
+
 
     function getCookie(name) {
         let cookieValue = null;
