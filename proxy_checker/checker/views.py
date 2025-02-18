@@ -1,7 +1,5 @@
 from django.http import JsonResponse, HttpResponse
-from django.views import View
 from rest_framework import viewsets
-from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -16,7 +14,6 @@ from django.shortcuts import render
 from django.core.cache import cache
 from threading import Thread, Lock
 from .serializers import CheckedProxySerializer
-from .models import CheckedProxy
 from rest_framework.pagination import PageNumberPagination
 from itertools import islice
 from bs4 import BeautifulSoup
@@ -620,7 +617,7 @@ class ArtificialIntelligence(View):
 class AIChat:
     """Класс чат-бота, использующего g4f.client для генерации ответов"""
 
-    def __init__(self, provider="DeepInfraChat", model="llama-3.3-70b", temperature=0.7):
+    def __init__(self, provider="DDG", model="gpt-4o-mini", temperature=0.7):
         self.client = Client()
         self.provider = provider
         self.model = model
